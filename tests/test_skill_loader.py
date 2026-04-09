@@ -43,3 +43,39 @@ def test_list_skills(tmp_path):
     loader = SkillLoader(roots=[tmp_path])
     skills = loader.list_skills()
     assert set(skills) == {"skill-x", "skill-y"}
+
+
+def test_load_skill_skill_md(tmp_path):
+    """Test loading skills from SKILL.md files."""
+    skill_dir = tmp_path / "test-skill"
+    skill_dir.mkdir()
+    (skill_dir / "SKILL.md").write_text("# Test Skill\nDo the thing.")
+
+    loader = SkillLoader(roots=[tmp_path])
+    instruction = loader.load_instruction("test-skill")
+    assert instruction == "# Test Skill\nDo the thing."
+
+
+def test_prefer_skill_md_over_instruction(tmp_path):
+    """Test that SKILL.md is preferred over instruction.md when both exist."""
+    skill_dir = tmp_path / "test-skill"
+    skill_dir.mkdir()
+    (skill_dir / "SKILL.md").write_text("# SKILL.md content\nThis should be loaded.")
+    (skill_dir / "instruction.md").write_text("# instruction.md content\nThis should NOT be loaded.")
+
+    loader = SkillLoader(roots=[tmp_path])
+    instruction = loader.load_instruction("test-skill")
+    assert instruction == "# SKILL.md content\nThis should be loaded."
+    assert "instruction.md content" not in instruction
+
+
+def test_list_skills_with_skill_md(tmp_path):
+    """Test that skills with SKILL.md are listed correctly."""
+    (tmp_path / "skill-a").mkdir()
+    (tmp_path / "skill-a" / "SKILL.md").write_text("Skill A")
+    (tmp_path / "skill-b").mkdir()
+    (tmp_path / "skill-b" / "instruction.md").write_text("Skill B")
+
+    loader = SkillLoader(roots=[tmp_path])
+    skills = loader.list_skills()
+    assert set(skills) == {"skill-a", "skill-b"}
