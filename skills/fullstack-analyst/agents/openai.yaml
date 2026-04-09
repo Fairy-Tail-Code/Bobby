@@ -1,0 +1,11 @@
+interface:
+  display_name: Fullstack Analyst
+  short_description: Turn PRDs into fullstack execution plans.
+  default_prompt: Analyze the PRD and repository context, then produce a concrete fullstack brief, design direction, and delivery plan for downstream coding and test work.
+  brand_color: "#1d4ed8"
+tags:
+  - fullstack
+  - planning
+  - architecture
+policy:
+  allow_implicit_invocation: true

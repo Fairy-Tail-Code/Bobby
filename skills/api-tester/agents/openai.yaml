@@ -1,0 +1,22 @@
+version: 1.0.0
+tags:
+  - api
+  - http
+  - testing
+  - contract
+interface:
+  display_name: API Tester
+  short_description: Validate HTTP APIs and OpenAPI contracts.
+  default_prompt: Validate the target HTTP API with direct requests and OpenAPI inspection, then report concrete contract mismatches, regressions, and missing coverage.
+dependencies:
+  tools:
+    - type: mcp
+      value: http_api
+  allowed_tools:
+    - mcp__http_api__fetch_http_response
+    - mcp__http_api__request_http
+    - mcp__http_api__inspect_openapi_spec
+policy:
+  require_output_schema: true
+  tool_approval_mode: allow_all
+output_schema: assets/api_check.schema.json

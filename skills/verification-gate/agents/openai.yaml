@@ -1,0 +1,29 @@
+version: 1.0.0
+tags:
+  - backend
+  - verification
+  - gate
+interface:
+  display_name: Verification Gate
+  short_description: Return structured verification gate results.
+  default_prompt: Analyze the verification evidence and return the structured verification gate result as JSON only.
+output_schema: assets/verification_gate.schema.json
+policy:
+  require_output_schema: true
+  tool_approval_mode: readonly_only
+dependencies:
+  tools:
+    - type: mcp
+      value: workspace
+    - type: mcp
+      value: shell
+    - type: mcp
+      value: git
+  allowed_tools:
+    - mcp__workspace__list_files
+    - mcp__workspace__read_file
+    - mcp__workspace__search_text
+    - mcp__workspace__stat_file
+    - mcp__shell__run_command
+    - mcp__git__get_git_status
+    - mcp__git__inspect_git_diff

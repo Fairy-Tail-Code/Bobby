@@ -1,0 +1,35 @@
+version: 1.0.0
+tags:
+  - git
+  - vcs
+  - delivery
+interface:
+  display_name: Git Operator
+  short_description: Inspect git state and prepare commits.
+  default_prompt: Inspect local git state, review the relevant diffs, stage only the intended paths, and create a clean repository-local commit when the task calls for it.
+dependencies:
+  tools:
+    - type: mcp
+      value: git
+    - type: mcp
+      value: gitee_ent
+  allowed_tools:
+    - mcp__git__get_git_status
+    - mcp__git__inspect_git_diff
+    - mcp__git__inspect_git_staged_diff
+    - mcp__git__list_git_branches
+    - mcp__git__inspect_git_log
+    - mcp__git__show_git_commit
+    - mcp__git__clone_git_repository
+    - mcp__git__create_git_branch
+    - mcp__git__fetch_git_remote
+    - mcp__git__checkout_git_branch
+    - mcp__git__push_git_branch
+    - mcp__git__list_git_changed_paths
+    - mcp__git__stage_git_paths
+    - mcp__git__commit_git_changes
+    - mcp__gitee_ent__get_gitee_current_user
+    - mcp__gitee_ent__get_gitee_repository
+    - mcp__gitee_ent__create_gitee_repository
+policy:
+  tool_approval_mode: allow_all

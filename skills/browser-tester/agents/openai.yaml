@@ -1,0 +1,28 @@
+version: 1.0.0
+tags:
+  - browser
+  - playwright
+  - e2e
+  - testing
+interface:
+  display_name: Browser Tester
+  short_description: Validate running apps with Playwright flows.
+  default_prompt: Use browser automation to validate the running application with focused, deterministic interactions and report the observed outcomes and failures.
+dependencies:
+  tools:
+    - type: mcp
+      value: browser
+  allowed_tools:
+    - mcp__browser__fetch_browser_page
+    - mcp__browser__open_browser_session
+    - mcp__browser__navigate_browser_session
+    - mcp__browser__click_browser_selector
+    - mcp__browser__fill_browser_selector
+    - mcp__browser__query_browser_selector
+    - mcp__browser__inspect_browser_session
+    - mcp__browser__take_browser_screenshot
+    - mcp__browser__close_browser_session
+policy:
+  require_output_schema: true
+  tool_approval_mode: allow_all
+output_schema: assets/browser_check.schema.json

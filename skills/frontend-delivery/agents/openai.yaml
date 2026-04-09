@@ -1,0 +1,55 @@
+version: 1.0.0
+tags:
+  - frontend
+  - ui
+  - delivery
+interface:
+  display_name: Frontend Delivery
+  short_description: Implement frontend code changes in the workspace.
+  default_prompt: Implement the approved frontend plan in the target repository, preserve existing architecture, and summarize the concrete code changes plus validation performed.
+runtime:
+  auto_prepare: true
+  required_capabilities:
+    - build
+dependencies:
+  tools:
+    - type: mcp
+      value: workspace
+    - type: mcp
+      value: shell
+    - type: mcp
+      value: docs_web
+    - type: mcp
+      value: git
+  allowed_tools:
+    - mcp__workspace__list_files
+    - mcp__workspace__read_file
+    - mcp__workspace__search_text
+    - mcp__workspace__stat_file
+    - mcp__workspace__write_file
+    - mcp__workspace__make_dirs
+    - mcp__workspace__delete_file
+    - mcp__workspace__move_file
+    - mcp__workspace__apply_patch
+    - mcp__shell__run_command
+    - mcp__shell__start_command
+    - mcp__shell__read_command_output
+    - mcp__shell__write_stdin
+    - mcp__shell__terminate_command
+    - mcp__docs_web__search_web
+    - mcp__docs_web__fetch_url
+    - mcp__git__get_git_status
+    - mcp__git__inspect_git_diff
+    - mcp__git__inspect_git_staged_diff
+    - mcp__git__list_git_branches
+    - mcp__git__inspect_git_log
+    - mcp__git__show_git_commit
+    - mcp__git__clone_git_repository
+    - mcp__git__fetch_git_remote
+    - mcp__git__checkout_git_branch
+    - mcp__git__push_git_branch
+    - mcp__git__list_git_changed_paths
+    - mcp__git__stage_git_paths
+    - mcp__git__commit_git_changes
+policy:
+  tool_approval_mode: allow_all

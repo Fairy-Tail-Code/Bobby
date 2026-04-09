@@ -1,0 +1,51 @@
+version: 1.0.0
+tags:
+  - backend
+  - review
+  - qa
+interface:
+  display_name: Backend Reviewer
+  short_description: Review backend implementation quality and readiness.
+  default_prompt: Review the backend implementation against the PRD, design, and verification evidence, then return findings first and clearly separate blocking issues from residual risk.
+dependencies:
+  tools:
+    - type: mcp
+      value: workspace
+    - type: mcp
+      value: shell
+    - type: mcp
+      value: docs_web
+    - type: mcp
+      value: database
+    - type: mcp
+      value: git
+    - type: mcp
+      value: http_api
+    - type: mcp
+      value: docker
+  allowed_tools:
+    - mcp__workspace__list_files
+    - mcp__workspace__read_file
+    - mcp__workspace__search_text
+    - mcp__workspace__stat_file
+    - mcp__shell__run_command
+    - mcp__docs_web__search_web
+    - mcp__docs_web__fetch_url
+    - mcp__database__find_sqlite_databases
+    - mcp__database__describe_database_schema
+    - mcp__database__describe_table_schema
+    - mcp__database__query_sql
+    - mcp__git__get_git_status
+    - mcp__git__inspect_git_diff
+    - mcp__git__inspect_git_staged_diff
+    - mcp__git__inspect_git_log
+    - mcp__git__show_git_commit
+    - mcp__http_api__fetch_http_response
+    - mcp__http_api__inspect_openapi_spec
+    - mcp__docker__list_docker_containers
+    - mcp__docker__inspect_docker_container
+    - mcp__docker__view_docker_logs
+    - mcp__docker__list_compose_services
+    - mcp__docker__inspect_compose_status
+policy:
+  tool_approval_mode: readonly_only

@@ -1,0 +1,11 @@
+interface:
+  display_name: Fullstack Reviewer
+  short_description: Review fullstack implementation quality and readiness.
+  default_prompt: Review the implementation against the PRD, design, and verification evidence, then return findings first and clearly separate blocking issues from residual risk.
+  brand_color: "#7c3aed"
+tags:
+  - fullstack
+  - review
+  - qa
+policy:
+  allow_implicit_invocation: true

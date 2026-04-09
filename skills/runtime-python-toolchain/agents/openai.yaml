@@ -1,0 +1,31 @@
+version: 1.0.0
+tags:
+  - runtime
+  - python
+  - provisioning
+interface:
+  display_name: Python Runtime Provisioner
+  short_description: Prepare a Python runtime when runtime inference selects Python.
+  default_prompt: Prepare a working Python runtime for the inferred repository before build or test commands run.
+runtime:
+  provisioner_for:
+    - python
+  detection_markers:
+    - pyproject.toml
+    - requirements.txt
+dependencies:
+  tools:
+    - type: mcp
+      value: shell
+    - type: mcp
+      value: docker
+  allowed_tools:
+    - mcp__shell__run_command
+    - mcp__shell__start_command
+    - mcp__shell__read_command_output
+    - mcp__shell__write_stdin
+    - mcp__shell__terminate_command
+    - mcp__docker__list_docker_images
+    - mcp__docker__run_compose_service_command
+policy:
+  tool_approval_mode: allow_all

@@ -1,0 +1,28 @@
+version: 1.0.0
+tags:
+  - backend
+  - prd
+  - design
+  - planning
+interface:
+  display_name: Backend Analyst
+  short_description: Turn backend PRDs into execution plans.
+  default_prompt: Analyze the backend PRD and repository context, then produce a concrete backend brief, design direction, and delivery plan for downstream coding and test work.
+dependencies:
+  tools:
+    - type: mcp
+      value: workspace
+    - type: mcp
+      value: shell
+    - type: mcp
+      value: docs_web
+  allowed_tools:
+    - mcp__workspace__list_files
+    - mcp__workspace__read_file
+    - mcp__workspace__search_text
+    - mcp__workspace__stat_file
+    - mcp__shell__run_command
+    - mcp__docs_web__search_web
+    - mcp__docs_web__fetch_url
+policy:
+  tool_approval_mode: readonly_only

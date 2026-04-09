@@ -1,0 +1,67 @@
+version: 1.0.0
+tags:
+  - backend
+  - tests
+  - verification
+interface:
+  display_name: Test Writer
+  short_description: Add backend tests and run verification.
+  default_prompt: Add or update backend-focused automated tests for the current change set, run the narrowest useful validation, and summarize the covered behavior plus any remaining gaps.
+runtime:
+  auto_prepare: true
+  required_capabilities:
+    - test
+dependencies:
+  tools:
+    - type: mcp
+      value: workspace
+    - type: mcp
+      value: shell
+    - type: mcp
+      value: docs_web
+    - type: mcp
+      value: database
+    - type: mcp
+      value: git
+    - type: mcp
+      value: http_api
+    - type: mcp
+      value: docker
+  allowed_tools:
+    - mcp__workspace__list_files
+    - mcp__workspace__read_file
+    - mcp__workspace__search_text
+    - mcp__workspace__stat_file
+    - mcp__workspace__write_file
+    - mcp__workspace__make_dirs
+    - mcp__workspace__delete_file
+    - mcp__workspace__move_file
+    - mcp__workspace__apply_patch
+    - mcp__shell__run_command
+    - mcp__shell__start_command
+    - mcp__shell__read_command_output
+    - mcp__shell__write_stdin
+    - mcp__shell__terminate_command
+    - mcp__docs_web__search_web
+    - mcp__docs_web__fetch_url
+    - mcp__database__find_sqlite_databases
+    - mcp__database__describe_database_schema
+    - mcp__database__describe_table_schema
+    - mcp__database__query_sql
+    - mcp__database__execute_sql
+    - mcp__git__get_git_status
+    - mcp__git__inspect_git_diff
+    - mcp__git__inspect_git_staged_diff
+    - mcp__http_api__fetch_http_response
+    - mcp__http_api__request_http
+    - mcp__http_api__inspect_openapi_spec
+    - mcp__docker__list_docker_containers
+    - mcp__docker__inspect_docker_container
+    - mcp__docker__view_docker_logs
+    - mcp__docker__list_compose_services
+    - mcp__docker__inspect_compose_status
+    - mcp__docker__start_compose_services
+    - mcp__docker__stop_compose_services
+    - mcp__docker__run_compose_service_command
+policy:
+  tool_approval_mode: allow_all

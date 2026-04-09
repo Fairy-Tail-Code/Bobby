@@ -1,0 +1,40 @@
+version: 1.0.0
+tags:
+  - repo
+  - survey
+  - backend
+interface:
+  display_name: Repo Surveyor
+  short_description: Map repository structure and backend constraints.
+  default_prompt: Survey the target repository, identify the backend architecture and constraints, and return an implementation-oriented summary for downstream planning and coding.
+dependencies:
+  tools:
+    - type: mcp
+      value: gitee_ent
+    - type: mcp
+      value: workspace
+    - type: mcp
+      value: shell
+    - type: mcp
+      value: database
+    - type: mcp
+      value: git
+    - type: mcp
+      value: docker
+  allowed_tools:
+    - mcp__workspace__list_files
+    - mcp__workspace__read_file
+    - mcp__workspace__search_text
+    - mcp__workspace__stat_file
+    - mcp__shell__run_command
+    - mcp__database__find_sqlite_databases
+    - mcp__database__describe_database_schema
+    - mcp__database__describe_table_schema
+    - mcp__git__get_git_status
+    - mcp__git__list_git_branches
+    - mcp__git__inspect_git_log
+    - mcp__gitee_ent__get_gitee_repository
+    - mcp__docker__list_compose_services
+    - mcp__docker__inspect_compose_status
+policy:
+  tool_approval_mode: readonly_only
