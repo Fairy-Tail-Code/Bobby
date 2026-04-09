@@ -4,30 +4,45 @@ from infrastructure.config import load_llm_config, load_mcp_config, load_harness
 
 
 def test_load_llm_config(tmp_path):
-    llm_yaml = tmp_path / "llm.yaml"
-    llm_yaml.write_text("""
-llm:
-  planner:
-    model: "test-model"
-    base_url: "http://localhost:11434/v1"
-    api_key: "test-key"
-    temperature: 0.7
-  generator:
-    model: "test-model"
-    base_url: "http://localhost:11434/v1"
-    api_key: "test-key"
-    temperature: 0.4
-  evaluator:
-    model: "test-model"
-    base_url: "http://localhost:11434/v1"
-    api_key: "test-key"
-    temperature: 0.2
-""")
+    env_file = tmp_path / ".env"
+    env_file.write_text(
+        "PLANNER_MODEL=test-model\n"
+        "PLANNER_BASE_URL=http://localhost:11434/v1\n"
+        "PLANNER_API_KEY=test-key\n"
+        "PLANNER_TEMPERATURE=0.7\n"
+        "GENERATOR_MODEL=test-model\n"
+        "GENERATOR_BASE_URL=http://localhost:11434/v1\n"
+        "GENERATOR_API_KEY=test-key\n"
+        "GENERATOR_TEMPERATURE=0.4\n"
+        "EVALUATOR_MODEL=test-model\n"
+        "EVALUATOR_BASE_URL=http://localhost:11434/v1\n"
+        "EVALUATOR_API_KEY=test-key\n"
+        "EVALUATOR_TEMPERATURE=0.2\n"
+    )
     config = load_llm_config(tmp_path)
     assert config.planner.model == "test-model"
     assert config.planner.temperature == 0.7
     assert config.generator.temperature == 0.4
     assert config.evaluator.temperature == 0.2
+
+
+def test_load_llm_config_default_temperature(tmp_path):
+    env_file = tmp_path / ".env"
+    env_file.write_text(
+        "PLANNER_MODEL=m\n"
+        "PLANNER_BASE_URL=http://x\n"
+        "PLANNER_API_KEY=k\n"
+        "GENERATOR_MODEL=m\n"
+        "GENERATOR_BASE_URL=http://x\n"
+        "GENERATOR_API_KEY=k\n"
+        "EVALUATOR_MODEL=m\n"
+        "EVALUATOR_BASE_URL=http://x\n"
+        "EVALUATOR_API_KEY=k\n"
+    )
+    config = load_llm_config(tmp_path)
+    assert config.planner.temperature == 0.7
+    assert config.generator.temperature == 0.7
+    assert config.evaluator.temperature == 0.7
 
 
 def test_load_mcp_config(tmp_path):

@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import os
 from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Any
@@ -67,12 +68,38 @@ def _load_yaml(path: Path) -> dict:
         return yaml.safe_load(f)
 
 
-def load_llm_config(config_dir: Path) -> LlmConfig:
-    raw = _load_yaml(config_dir / "llm.yaml")["llm"]
+def _load_dotenv(env_path: Path) -> dict[str, str]:
+    """Parse a .env file into a dict. Ignores comments and blank lines."""
+    env = {}
+    if not env_path.exists():
+        return env
+    for line in env_path.read_text(encoding="utf-8").splitlines():
+        line = line.strip()
+        if not line or line.startswith("#"):
+            continue
+        if "=" in line:
+            key, _, value = line.partition("=")
+            env[key.strip()] = value.strip()
+    return env
+
+
+def _load_agent_env_config(env: dict[str, str], prefix: str) -> LlmAgentConfig:
+    """Load an agent's LLM config from env vars with the given prefix."""
+    return LlmAgentConfig(
+        model=env[f"{prefix}_MODEL"],
+        base_url=env[f"{prefix}_BASE_URL"],
+        api_key=env[f"{prefix}_API_KEY"],
+        temperature=float(env.get(f"{prefix}_TEMPERATURE", "0.7")),
+    )
+
+
+def load_llm_config(project_dir: Path) -> LlmConfig:
+    """Load LLM config from .env file in the project directory."""
+    env = _load_dotenv(project_dir / ".env")
     return LlmConfig(
-        planner=LlmAgentConfig(**raw["planner"]),
-        generator=LlmAgentConfig(**raw["generator"]),
-        evaluator=LlmAgentConfig(**raw["evaluator"]),
+        planner=_load_agent_env_config(env, "PLANNER"),
+        generator=_load_agent_env_config(env, "GENERATOR"),
+        evaluator=_load_agent_env_config(env, "EVALUATOR"),
     )
 
 

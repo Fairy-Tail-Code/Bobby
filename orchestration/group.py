@@ -1,34 +1,46 @@
 from __future__ import annotations
 
-from autogen import ConversableAgent, GroupChat, GroupChatManager
+from autogen import ConversableAgent, ContextVariables
+from autogen.agentchat.contrib.swarm_agent import initiate_swarm_chat, a_initiate_swarm_chat
 
 from infrastructure.config import LlmConfig, HarnessConfig
-from orchestration.termination import create_termination_check
 
 
-def create_group_chat(
+def run_swarm(
+    initial_agent: ConversableAgent,
     agents: list[ConversableAgent],
-    llm_config: LlmConfig,
+    prompt: str,
     harness_config: HarnessConfig,
-) -> GroupChatManager:
-    """Create a GroupChatManager with auto speaker selection."""
-    is_termination_msg = create_termination_check()
+    context_variables: ContextVariables | None = None,
+):
+    """Run a swarm chat synchronously.
 
-    group_chat = GroupChat(
+    Returns (chat_result, context_variables, last_speaker).
+    """
+    return initiate_swarm_chat(
+        initial_agent=initial_agent,
+        messages=prompt,
         agents=agents,
-        messages=[],
-        max_round=harness_config.max_rounds,
-        speaker_selection_method="auto",
-        send_introductions=True,
-        max_retries_for_selecting_speaker=3,
+        max_rounds=harness_config.max_rounds,
+        context_variables=context_variables or ContextVariables(),
     )
 
-    manager_llm_config = llm_config.planner.to_llm_config()
 
-    manager = GroupChatManager(
-        groupchat=group_chat,
-        llm_config=manager_llm_config,
-        is_termination_msg=is_termination_msg,
+async def arun_swarm(
+    initial_agent: ConversableAgent,
+    agents: list[ConversableAgent],
+    prompt: str,
+    harness_config: HarnessConfig,
+    context_variables: ContextVariables | None = None,
+):
+    """Run a swarm chat asynchronously.
+
+    Returns (chat_result, context_variables, last_speaker).
+    """
+    return await a_initiate_swarm_chat(
+        initial_agent=initial_agent,
+        messages=prompt,
+        agents=agents,
+        max_rounds=harness_config.max_rounds,
+        context_variables=context_variables or ContextVariables(),
     )
-
-    return manager

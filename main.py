@@ -10,7 +10,7 @@ from infrastructure.config import load_llm_config, load_mcp_config, load_harness
 from infrastructure.mcp.manager import McpManager
 from infrastructure.skills.loader import SkillLoader
 from agents.factory import create_all_agents, SKILLS_DIR
-from orchestration.group import create_group_chat
+from orchestration.group import arun_swarm
 
 logging.basicConfig(
     level=logging.INFO,
@@ -18,14 +18,16 @@ logging.basicConfig(
 )
 logger = logging.getLogger(__name__)
 
-CONFIG_DIR = Path(__file__).parent / "config"
+PROJECT_DIR = Path(__file__).parent
+CONFIG_DIR = PROJECT_DIR / "config"
 
 
 async def run(prompt: str) -> None:
     """Run the harness with the given user prompt."""
     # Load configuration
-    logger.info("Loading configuration from %s", CONFIG_DIR)
-    llm_config = load_llm_config(CONFIG_DIR)
+    logger.info("Loading LLM config from .env")
+    llm_config = load_llm_config(PROJECT_DIR)
+    logger.info("Loading MCP and harness config from %s", CONFIG_DIR)
     mcp_config = load_mcp_config(CONFIG_DIR)
     harness_config = load_harness_config(CONFIG_DIR)
 
@@ -44,8 +46,8 @@ async def run(prompt: str) -> None:
             logger.error("Failed to connect to MCP server '%s': %s", server_cfg.name, e)
 
     try:
-        # Create agents with skills
-        logger.info("Creating agents with skills...")
+        # Create agents with skills and handoffs
+        logger.info("Creating agents with skills and swarm handoffs...")
         agents_dict = create_all_agents(llm_config, mcp_manager, skill_loader)
         agents_list = [
             agents_dict["planner"],
@@ -53,16 +55,19 @@ async def run(prompt: str) -> None:
             agents_dict["evaluator"],
         ]
 
-        # Create group chat
-        logger.info("Setting up group chat (max %d rounds)...", harness_config.max_rounds)
-        manager = create_group_chat(agents_list, llm_config, harness_config)
-
-        # Start the conversation
-        logger.info("Starting conversation with prompt: %s", prompt[:100])
-        agents_list[0].initiate_chat(
-            manager,
-            message=prompt,
+        # Run swarm chat
+        logger.info(
+            "Starting swarm chat (max %d rounds) with prompt: %s",
+            harness_config.max_rounds,
+            prompt[:100],
         )
+        chat_result, context, last_speaker = await arun_swarm(
+            initial_agent=agents_dict["planner"],
+            agents=agents_list,
+            prompt=prompt,
+            harness_config=harness_config,
+        )
+        logger.info("Swarm completed. Last speaker: %s", last_speaker.name)
     finally:
         # Cleanup
         logger.info("Disconnecting MCP servers...")

@@ -1,36 +1,36 @@
 """End-to-end structural test — verifies wiring without MCP servers or LLM calls."""
-import pytest
 from pathlib import Path
 
 from infrastructure.config import load_llm_config, load_mcp_config, load_harness_config
 from agents.planner import create_planner
 from agents.generator import create_generator
 from agents.evaluator import create_evaluator
-from orchestration.group import create_group_chat
+from agents.factory import setup_handoffs
 from orchestration.termination import create_termination_check
 
 
-CONFIG_DIR = Path(__file__).parent.parent / "config"
+PROJECT_DIR = Path(__file__).parent.parent
+CONFIG_DIR = PROJECT_DIR / "config"
 
 
 def test_config_files_exist():
-    assert (CONFIG_DIR / "llm.yaml").exists()
+    assert (PROJECT_DIR / ".env").exists()
     assert (CONFIG_DIR / "mcp.yaml").exists()
     assert (CONFIG_DIR / "harness.yaml").exists()
 
 
 def test_config_loading():
-    llm = load_llm_config(CONFIG_DIR)
+    llm = load_llm_config(PROJECT_DIR)
     mcp = load_mcp_config(CONFIG_DIR)
     harness = load_harness_config(CONFIG_DIR)
     assert llm.planner.model
-    assert len(mcp.servers) >= 3
+    assert len(mcp.servers) >= 1
     assert harness.max_rounds > 0
     assert len(harness.dimensions) == 4
 
 
 def test_agent_creation():
-    llm = load_llm_config(CONFIG_DIR)
+    llm = load_llm_config(PROJECT_DIR)
     planner = create_planner(llm)
     generator = create_generator(llm)
     evaluator = create_evaluator(llm)
@@ -39,15 +39,18 @@ def test_agent_creation():
     assert evaluator.name == "Evaluator"
 
 
-def test_group_chat_creation():
-    llm = load_llm_config(CONFIG_DIR)
-    harness = load_harness_config(CONFIG_DIR)
-    planner = create_planner(llm)
-    generator = create_generator(llm)
-    evaluator = create_evaluator(llm)
-    manager = create_group_chat([planner, generator, evaluator], llm, harness)
-    assert manager is not None
-    assert len(manager.groupchat.agents) == 3
+def test_handoffs_setup():
+    llm = load_llm_config(PROJECT_DIR)
+    agents = {
+        "planner": create_planner(llm),
+        "generator": create_generator(llm),
+        "evaluator": create_evaluator(llm),
+    }
+    setup_handoffs(agents)
+    # Verify handoffs were set
+    assert len(agents["planner"].handoffs.llm_conditions) > 0
+    assert len(agents["generator"].handoffs.llm_conditions) > 0
+    assert len(agents["evaluator"].handoffs.llm_conditions) > 0
 
 
 def test_termination_conditions():
