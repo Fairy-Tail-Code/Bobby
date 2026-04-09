@@ -1,0 +1,18 @@
+llm:
+  planner:
+    model: "your-model-name"
+    base_url: "http://localhost:11434/v1"
+    api_key: "your-api-key"
+    temperature: 0.7
+
+  generator:
+    model: "your-model-name"
+    base_url: "http://localhost:11434/v1"
+    api_key: "your-api-key"
+    temperature: 0.4
+
+  evaluator:
+    model: "your-model-name"
+    base_url: "http://localhost:11434/v1"
+    api_key: "your-api-key"
+    temperature: 0.2

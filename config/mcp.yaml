@@ -1,0 +1,24 @@
+mcp_servers:
+  shell:
+    transport: stdio
+    command: python
+    args: ["-m", "openharness.mcp_servers.shell_server"]
+    startup_timeout: 30
+
+  git:
+    transport: stdio
+    command: python
+    args: ["-m", "openharness.mcp_servers.git_server"]
+    startup_timeout: 30
+
+  browser:
+    transport: stdio
+    command: python
+    args: ["-m", "openharness.mcp_servers.browser_server"]
+    startup_timeout: 30
+
+  workspace:
+    transport: stdio
+    command: python
+    args: ["-m", "openharness.mcp_servers.workspace_server"]
+    startup_timeout: 30

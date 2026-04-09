@@ -1,0 +1,26 @@
+harness:
+  evaluation:
+    max_rounds: 15
+    score_threshold: 7
+    dimensions:
+      - name: design_quality
+        weight: high
+        threshold: 7
+      - name: originality
+        weight: high
+        threshold: 7
+      - name: craftsmanship
+        weight: low
+        threshold: 5
+      - name: functionality
+        weight: low
+        threshold: 5
+
+  tech_stack:
+    frontend: "react+vite"
+    backend: "fastapi"
+    database: "sqlite"
+    version_control: "git"
+
+  context:
+    strategy: "compaction"
