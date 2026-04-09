@@ -8,7 +8,8 @@ from pathlib import Path
 
 from infrastructure.config import load_llm_config, load_mcp_config, load_harness_config
 from infrastructure.mcp.manager import McpManager
-from agents.factory import create_all_agents
+from infrastructure.skills.loader import SkillLoader
+from agents.factory import create_all_agents, SKILLS_DIR
 from orchestration.group import create_group_chat
 
 logging.basicConfig(
@@ -28,6 +29,11 @@ async def run(prompt: str) -> None:
     mcp_config = load_mcp_config(CONFIG_DIR)
     harness_config = load_harness_config(CONFIG_DIR)
 
+    # Initialize skill loader
+    skill_loader = SkillLoader(roots=[SKILLS_DIR])
+    available_skills = skill_loader.list_skills()
+    logger.info("Available skills: %s", available_skills)
+
     # Connect to MCP servers
     logger.info("Connecting to MCP servers...")
     mcp_manager = McpManager()
@@ -38,9 +44,9 @@ async def run(prompt: str) -> None:
             logger.error("Failed to connect to MCP server '%s': %s", server_cfg.name, e)
 
     try:
-        # Create agents
-        logger.info("Creating agents...")
-        agents_dict = create_all_agents(llm_config, mcp_manager)
+        # Create agents with skills
+        logger.info("Creating agents with skills...")
+        agents_dict = create_all_agents(llm_config, mcp_manager, skill_loader)
         agents_list = [
             agents_dict["planner"],
             agents_dict["generator"],

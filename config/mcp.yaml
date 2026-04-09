@@ -2,23 +2,47 @@ mcp_servers:
   shell:
     transport: stdio
     command: python
-    args: ["-m", "openharness.mcp_servers.shell_server"]
+    args: ["-m", "infrastructure.mcp_servers.shell_server"]
     startup_timeout: 30
 
   git:
     transport: stdio
     command: python
-    args: ["-m", "openharness.mcp_servers.git_server"]
+    args: ["-m", "infrastructure.mcp_servers.git_server"]
     startup_timeout: 30
 
   browser:
     transport: stdio
     command: python
-    args: ["-m", "openharness.mcp_servers.browser_server"]
+    args: ["-m", "infrastructure.mcp_servers.browser_server"]
     startup_timeout: 30
 
   workspace:
     transport: stdio
     command: python
-    args: ["-m", "openharness.mcp_servers.workspace_server"]
+    args: ["-m", "infrastructure.mcp_servers.workspace_server"]
+    startup_timeout: 30
+
+  docker:
+    transport: stdio
+    command: python
+    args: ["-m", "infrastructure.mcp_servers.docker_server"]
+    startup_timeout: 30
+
+  database:
+    transport: stdio
+    command: python
+    args: ["-m", "infrastructure.mcp_servers.database_server"]
+    startup_timeout: 30
+
+  http_api:
+    transport: stdio
+    command: python
+    args: ["-m", "infrastructure.mcp_servers.http_api_server"]
+    startup_timeout: 30
+
+  docs_web:
+    transport: stdio
+    command: python
+    args: ["-m", "infrastructure.mcp_servers.docs_web_server"]
     startup_timeout: 30
