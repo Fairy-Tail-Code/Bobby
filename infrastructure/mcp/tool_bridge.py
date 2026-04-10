@@ -1,6 +1,5 @@
 from __future__ import annotations
 
-import asyncio
 import logging
 from typing import Any, Callable
 
@@ -12,26 +11,19 @@ from infrastructure.mcp.manager import McpManager, McpToolInfo
 logger = logging.getLogger(__name__)
 
 
-def create_sync_tool_func(
+def create_async_tool_func(
     mcp_manager: McpManager,
     server_name: str,
     tool_name: str,
-) -> Callable[..., str]:
-    """Create a synchronous wrapper function that calls an MCP tool."""
+) -> Callable[..., Any]:
+    """Create an async wrapper function that calls an MCP tool.
 
-    def tool_func(**kwargs: Any) -> str:
-        coro = mcp_manager.call_tool(server_name, tool_name, kwargs)
-        try:
-            loop = asyncio.get_running_loop()
-        except RuntimeError:
-            loop = None
+    AG2's group chat runs in async context, so tool functions must be async
+    to properly await MCP calls within the same event loop.
+    """
 
-        if loop and loop.is_running():
-            import concurrent.futures
-            with concurrent.futures.ThreadPoolExecutor(max_workers=1) as pool:
-                return pool.submit(asyncio.run, coro).result()
-        else:
-            return asyncio.run(coro)
+    async def tool_func(**kwargs: Any) -> str:
+        return await mcp_manager.call_tool(server_name, tool_name, kwargs)
 
     tool_func.__name__ = tool_name
     tool_func.__qualname__ = tool_name
@@ -51,12 +43,12 @@ def register_tools_for_agent(
             if tool_filter and tool_info.tool_name not in tool_filter:
                 continue
 
-            sync_func = create_sync_tool_func(mcp_manager, server_name, tool_info.tool_name)
+            tool_func = create_async_tool_func(mcp_manager, server_name, tool_info.tool_name)
 
             ag2_tool = Tool(
                 name=tool_info.tool_name,
                 description=tool_info.description,
-                func_or_tool=sync_func,
+                func_or_tool=tool_func,
                 parameters_json_schema=tool_info.input_schema,
             )
             ag2_tool.register_for_llm(agent)

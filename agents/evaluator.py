@@ -9,7 +9,7 @@ from infrastructure.config import LlmConfig
 def create_evaluator(llm_config: LlmConfig) -> ConversableAgent:
     """Create the Evaluator agent that reviews applications with Playwright."""
     prompt = load_prompt("evaluator")
-    return ConversableAgent(
+    evaluate_agent = ConversableAgent(
         name="Evaluator",
         system_message=prompt,
         description=(
@@ -22,3 +22,5 @@ def create_evaluator(llm_config: LlmConfig) -> ConversableAgent:
         llm_config=llm_config.evaluator.to_llm_config(),
         human_input_mode="NEVER",
     )
+
+    return evaluate_agent
