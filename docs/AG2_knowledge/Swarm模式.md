@@ -1,8 +1,36 @@
-# AG2 Swarm 模式
+# AG2 Group Chat Pattern 模式
 
 ## 核心概念
 
-Swarm 是 AG2 提供的多 Agent 协作模式，通过**条件化转移**（handoffs）控制 Agent 之间的流转，比 GroupChat 的 LLM 自由选择更结构化。
+AG2 新版（0.9+）使用 `Pattern` + `initiate_group_chat` 编排多 Agent 协作，通过 `Handoffs` + `OnCondition` 定义条件化转移。
+
+## 重要：新旧 API 不兼容
+
+### 旧版（不要用）
+```python
+# swarm_agent.py — 不支持新版 Handoffs API
+from autogen.agentchat.contrib.swarm_agent import initiate_swarm_chat
+```
+旧版 `initiate_swarm_chat` 有自己的转移机制，**不认识** `Handoffs` 对象。Planner 输出后会直接 "No next speaker selected" 异常终止。
+
+### 新版（正确用法）
+```python
+from autogen.agentchat.group.patterns import DefaultPattern
+from autogen.agentchat.group.multi_agent_chat import initiate_group_chat, a_initiate_group_chat
+
+pattern = DefaultPattern(
+    initial_agent=planner,
+    agents=[planner, generator, evaluator],
+    context_variables=context_variables,
+)
+chat_result, context_vars, last_speaker = initiate_group_chat(
+    pattern=pattern,
+    messages="用户 prompt",
+    max_rounds=15,
+)
+```
+
+`DefaultPattern` 直接读取每个 agent 的 `handoffs` 属性来驱动转移。
 
 ## 关键类
 
@@ -21,44 +49,28 @@ OnCondition(
 )
 ```
 
-### AfterWork / TerminateTarget
-兜底行为：
+### TerminateTarget
+兜底终止：
 ```python
-agent.handoffs.set_after_work(TerminateTarget())  # 无条件终止
+agent.handoffs.set_after_work(TerminateTarget())
 ```
 
-## 启动 Swarm
-
-```python
-from autogen.agentchat.contrib.swarm_agent import initiate_swarm_chat, a_initiate_swarm_chat
-
-# 同步
-chat_result, context_vars, last_speaker = initiate_swarm_chat(
-    initial_agent=planner,
-    messages="用户 prompt",
-    agents=[planner, generator, evaluator],
-    max_rounds=15,
-    context_variables=context_variables,  # 可选，共享上下文
-)
-
-# 异步
-chat_result, context_vars, last_speaker = await a_initiate_swarm_chat(...)
-```
+## 其他 Pattern 类型
+- `AutoPattern` — GroupChatManager 自动选择 speaker
+- `RoundRobinPattern` — 轮流发言
+- `RandomPattern` — 随机选择
 
 ## ContextVariables
-
-跨 Agent 共享的可变状态：
 ```python
 from autogen import ContextVariables
-
 ctx = ContextVariables()
 ctx.set("retries", 0)
-ctx.get("retries")  # 0
 ```
 
-## 注意事项
+## 踩坑记录
 
-1. **不能直接赋值 list**：`agent.handoffs = [...]` 会破坏 Handoffs 对象，必须用 `agent.handoffs = Handoffs()` 然后用 API 添加
-2. **AgentTarget 是必须的**：`OnCondition(target=agent)` 会报 Pydantic 验证错误，必须 `OnCondition(target=AgentTarget(agent))`
-3. **StringLLMCondition 是必须的**：`OnCondition(condition="string")` 同样报错，必须 `OnCondition(condition=StringLLMCondition("string"))`
-4. **返回值是三元组**：`(ChatResult, ContextVariables, ConversableAgent)` — 最后一个参数是最后发言的 agent
+1. **旧 swarm 不兼容新 Handoffs**：`initiate_swarm_chat` 不识别 `Handoffs` + `OnCondition`，必须用 `DefaultPattern` + `initiate_group_chat`
+2. **不能直接赋值 list**：`agent.handoffs = [...]` 破坏对象，必须 `agent.handoffs = Handoffs()` 然后用 API 添加
+3. **AgentTarget 是必须的**：`OnCondition(target=agent)` 报 Pydantic 错误
+4. **StringLLMCondition 是必须的**：`OnCondition(condition="string")` 报 Pydantic 错误
+5. **返回值是三元组**：`(ChatResult, ContextVariables, ConversableAgent)`
