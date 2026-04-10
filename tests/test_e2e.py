@@ -55,7 +55,7 @@ def test_handoffs_setup():
 
 def test_termination_conditions():
     check = create_termination_check()
-    assert check({"content": "EVALUATION PASSED - ALL DIMENSIONS ABOVE THRESHOLD"})
-    assert check({"content": "TERMINATE"})
-    assert not check({"content": "Needs improvement on design"})
-    assert not check({"content": "Building the application now"})
+    assert check({"content": "EVALUATION PASSED - ALL DIMENSIONS ABOVE THRESHOLD", "name": "Evaluator"})
+    assert check({"content": "TERMINATE", "name": "Evaluator"})
+    assert not check({"content": "Needs improvement on design", "name": "Evaluator"})
+    assert not check({"content": "TERMINATE", "name": "Generator"})
