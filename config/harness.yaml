@@ -1,6 +1,6 @@
 harness:
   evaluation:
-    max_rounds: 15
+    max_rounds: 100
     score_threshold: 7
     dimensions:
       - name: design_quality

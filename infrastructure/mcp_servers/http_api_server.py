@@ -8,7 +8,38 @@ import yaml
 from mcp.server.fastmcp import FastMCP
 from mcp.types import ToolAnnotations
 
-from openharness.shared.normalize import optional_string_mapping, required_string
+
+def _required_string(value: str, *, error_message: str) -> str:
+    """Validate and return a non-empty stripped string."""
+    if not isinstance(value, str) or not value.strip():
+        raise ValueError(error_message)
+    return value.strip()
+
+
+def _optional_string_mapping(
+    value: dict[str, str] | None,
+    *,
+    field_name: str,
+    mapping_error_message: str,
+    key_error_message: str,
+    item_error_builder: object,
+) -> dict[str, str]:
+    """Validate an optional dict[str, str] mapping."""
+    if value is None:
+        return {}
+    if not isinstance(value, dict):
+        raise ValueError(mapping_error_message)
+    result: dict[str, str] = {}
+    for raw_key, raw_value in value.items():
+        if not isinstance(raw_key, str) or not raw_key.strip():
+            raise ValueError(key_error_message)
+        if not isinstance(raw_value, str):
+            builder = item_error_builder
+            if callable(builder):
+                raise ValueError(builder(field_name, raw_key))
+            raise ValueError(f"Tool field '{field_name}.{raw_key}' must be a string.")
+        result[raw_key.strip()] = raw_value
+    return result
 
 
 http_api_server = FastMCP("openharness-http-api", log_level="ERROR")
@@ -177,7 +208,7 @@ def _send_http_request(
     timeout_ms: int,
 ) -> httpx.Response:
     """Send one HTTP request and return the response."""
-    normalized_url = required_string(url, error_message="Tool field 'url' must be a non-empty string.")
+    normalized_url = _required_string(url, error_message="Tool field 'url' must be a non-empty string.")
     normalized_headers = _normalize_string_mapping(headers, field_name="headers")
     normalized_query_params = _normalize_string_mapping(query_params, field_name="query_params")
     normalized_form_body = _normalize_string_mapping(form_body, field_name="form_body")
@@ -237,7 +268,7 @@ def _parse_openapi_document(content: str) -> dict[str, Any]:
 
 def _normalize_method(method: str, *, readonly_only: bool) -> str:
     """Return one validated HTTP method."""
-    normalized_method = required_string(
+    normalized_method = _required_string(
         method,
         error_message="Tool field 'method' must be a non-empty string.",
     ).upper()
@@ -276,7 +307,7 @@ def _validate_request_bodies(
 
 def _normalize_string_mapping(value: dict[str, str] | None, *, field_name: str) -> dict[str, str]:
     """Return one validated string mapping."""
-    return optional_string_mapping(
+    return _optional_string_mapping(
         value,
         field_name=field_name,
         mapping_error_message=f"Tool field '{field_name}' must be an object when provided.",

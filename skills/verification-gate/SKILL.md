@@ -1,6 +1,8 @@
 ---
 name: verification-gate
 description: Return structured verification gate results for the current delivery iteration.
+summary: "Return structured verification gate results for the current delivery iteration."
+mcp_servers: []
 ---
 
 # Verification Gate

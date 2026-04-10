@@ -1,6 +1,10 @@
 ---
 name: browser-tester
 description: Validate running applications with Playwright browser automation and focused interaction steps.
+summary: "Use Playwright to validate running apps end-to-end with inspection, interaction, and screenshots."
+mcp_servers:
+  - browser
+  - shell
 ---
 
 # Browser Tester

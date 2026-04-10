@@ -1,6 +1,9 @@
 ---
 name: git-operator
 description: Inspect local git state, review diffs, stage paths, and create local commits.
+summary: "Inspect git state, review diffs, stage paths, and create local commits."
+mcp_servers:
+  - git
 ---
 
 # Git Operator

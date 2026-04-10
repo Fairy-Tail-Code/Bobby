@@ -1,6 +1,9 @@
 ---
 name: api-tester
 description: Validate HTTP APIs through direct requests and OpenAPI inspection.
+summary: "Validate HTTP APIs through direct requests and OpenAPI schema inspection."
+mcp_servers:
+  - http_api
 ---
 
 # API Tester

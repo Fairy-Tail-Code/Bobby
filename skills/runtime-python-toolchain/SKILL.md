@@ -1,6 +1,9 @@
 ---
 name: runtime-python-toolchain
 description: Prepare a Python runtime for the current repository when runtime inference selects Python.
+summary: "Prepare Python runtime environment and validate toolchain availability."
+mcp_servers:
+  - shell
 ---
 
 # Python Runtime Provisioner

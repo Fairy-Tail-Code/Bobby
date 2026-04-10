@@ -48,3 +48,40 @@ result = await session.call_tool("run_command", {"cmd": "echo hello"})
 - 各自的领域工具（如 Playwright for browser_server）
 
 无 openharness 内部模块依赖，可独立运行。
+
+## Skill-MCP 对齐（2026-04-10）
+
+每个 SKILL.md 的 frontmatter 中声明了 `mcp_servers` 依赖：
+```yaml
+---
+name: browser-tester
+summary: "Use Playwright to validate running apps..."
+mcp_servers:
+  - browser
+  - shell
+---
+```
+
+启动时 `SkillRegistry.validate_alignment()` 校验所有 skill 的 MCP 依赖是否已连接，缺失的会输出 warning。
+
+### Skill → MCP 依赖映射
+
+| Skill | MCP Servers |
+|-------|------------|
+| repo-surveyor | workspace, shell |
+| fullstack-analyst | workspace |
+| backend-analyst | workspace |
+| backend-delivery | workspace, shell |
+| frontend-delivery | workspace, shell |
+| bug-fixer | workspace, shell |
+| git-operator | git |
+| docker-operator | docker |
+| runtime-python-toolchain | shell |
+| runtime-node-toolchain | shell |
+| runtime-go-toolchain | shell |
+| browser-tester | browser, shell |
+| api-tester | http_api |
+| verification-gate | (none) |
+| test-writer | workspace, shell |
+| backend-reviewer | workspace, shell |
+| fullstack-reviewer | workspace, shell |

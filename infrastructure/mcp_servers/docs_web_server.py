@@ -11,7 +11,41 @@ import httpx
 from mcp.server.fastmcp import FastMCP
 from mcp.types import ToolAnnotations
 
-from openharness.shared.normalize import optional_string_list, required_string
+
+def _required_string(value: str, *, error_message: str) -> str:
+    """Validate and return a non-empty stripped string."""
+    if not isinstance(value, str) or not value.strip():
+        raise ValueError(error_message)
+    return value.strip()
+
+
+def _optional_string_list(
+    value: list[str] | None,
+    *,
+    field_name: str,
+    list_error_message: str,
+    item_error_builder: object,
+    dedupe: bool = False,
+) -> tuple[str, ...]:
+    """Validate an optional list of strings, returning a tuple."""
+    if value is None:
+        return ()
+    if not isinstance(value, list):
+        raise ValueError(list_error_message)
+    result: list[str] = []
+    seen: set[str] = set()
+    for index, raw_item in enumerate(value):
+        if not isinstance(raw_item, str) or not raw_item.strip():
+            builder = item_error_builder
+            if callable(builder):
+                raise ValueError(builder(field_name, index))
+            raise ValueError(f"Tool field '{field_name}[{index}]' must be a non-empty string.")
+        item = raw_item.strip()
+        if dedupe and item in seen:
+            continue
+        seen.add(item)
+        result.append(item)
+    return tuple(result)
 
 
 docs_web_server = FastMCP("openharness-docs-web", log_level="ERROR")
@@ -78,7 +112,7 @@ def search_web_documents(
     client: httpx.Client | None = None,
 ) -> dict[str, Any]:
     """Search the web and return parsed results."""
-    normalized_query = required_string(query, error_message="Tool field 'query' must be a non-empty string.")
+    normalized_query = _required_string(query, error_message="Tool field 'query' must be a non-empty string.")
     if max_results <= 0:
         raise ValueError("Tool 'search_web' field 'max_results' must be a positive integer.")
     if timeout_ms <= 0:
@@ -111,7 +145,7 @@ def fetch_web_document(
     client: httpx.Client | None = None,
 ) -> dict[str, Any]:
     """Fetch one URL and return normalized text content."""
-    normalized_url = required_string(url, error_message="Tool field 'url' must be a non-empty string.")
+    normalized_url = _required_string(url, error_message="Tool field 'url' must be a non-empty string.")
     if timeout_ms <= 0:
         raise ValueError("Tool 'fetch_url' field 'timeout_ms' must be a positive integer.")
     if max_chars <= 0:
@@ -190,7 +224,7 @@ def _build_search_query(query: str, domains: tuple[str, ...]) -> str:
 
 def _normalize_domains(domains: list[str] | None) -> tuple[str, ...]:
     """Return one validated list of unique domains."""
-    return optional_string_list(
+    return _optional_string_list(
         domains,
         field_name="domains",
         list_error_message="Tool 'search_web' field 'domains' must be a list when provided.",

@@ -1,6 +1,10 @@
 ---
 name: backend-reviewer
 description: Review delivery results, produce findings, and decide whether the iteration is acceptable.
+summary: "Review backend delivery results, produce findings, and decide acceptability."
+mcp_servers:
+  - workspace
+  - shell
 ---
 
 # Backend Reviewer

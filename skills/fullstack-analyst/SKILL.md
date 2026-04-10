@@ -1,6 +1,9 @@
 ---
 name: fullstack-analyst
 description: Translate a product PRD into a fullstack implementation brief, design, and delivery plan.
+summary: "Translate PRD into a fullstack implementation brief with design and delivery plan."
+mcp_servers:
+  - workspace
 ---
 
 # Fullstack Analyst

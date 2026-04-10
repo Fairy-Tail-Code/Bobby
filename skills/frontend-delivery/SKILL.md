@@ -1,6 +1,10 @@
 ---
 name: frontend-delivery
 description: Implement frontend code changes in the target repository using workspace and shell MCP tools.
+summary: "Implement frontend code changes using workspace file tools and shell commands."
+mcp_servers:
+  - workspace
+  - shell
 ---
 
 # Frontend Delivery

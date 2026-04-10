@@ -8,7 +8,7 @@ from pathlib import Path
 
 from infrastructure.config import load_llm_config, load_mcp_config, load_harness_config
 from infrastructure.mcp.manager import McpManager
-from infrastructure.skills.loader import SkillLoader
+from infrastructure.skills.registry import SkillRegistry
 from agents.factory import create_all_agents, SKILLS_DIR
 from orchestration.group import arun_swarm
 
@@ -31,24 +31,36 @@ async def run(prompt: str) -> None:
     mcp_config = load_mcp_config(CONFIG_DIR)
     harness_config = load_harness_config(CONFIG_DIR)
 
-    # Initialize skill loader
-    skill_loader = SkillLoader(roots=[SKILLS_DIR])
-    available_skills = skill_loader.list_skills()
-    logger.info("Available skills: %s", available_skills)
+    # Initialize skill registry
+    skill_registry = SkillRegistry(roots=[SKILLS_DIR])
+    available_skills = skill_registry.list_skills()
+    logger.info("Available skills: %s", [s.name for s in available_skills])
 
     # Connect to MCP servers
     logger.info("Connecting to MCP servers...")
     mcp_manager = McpManager()
+    connected_servers: list[str] = []
     for server_cfg in mcp_config.servers:
         try:
             await mcp_manager.connect(server_cfg)
+            connected_servers.append(server_cfg.name)
         except Exception as e:
             logger.error("Failed to connect to MCP server '%s': %s", server_cfg.name, e)
+
+    # Validate skill-MCP alignment
+    skill_registry.connected_servers = connected_servers
+    alignment_issues = skill_registry.validate_alignment()
+    if alignment_issues:
+        for issue in alignment_issues:
+            logger.warning(
+                "Skill '%s' needs MCP servers %s but %s not connected",
+                issue.skill_name, issue.missing_servers, issue.missing_servers,
+            )
 
     try:
         # Create agents with skills and handoffs
         logger.info("Creating agents with skills and swarm handoffs...")
-        agents_dict = create_all_agents(llm_config, mcp_manager, skill_loader)
+        agents_dict = create_all_agents(llm_config, mcp_manager, skill_registry)
         agents_list = [
             agents_dict["planner"],
             agents_dict["generator"],

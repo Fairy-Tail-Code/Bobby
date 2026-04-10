@@ -1,6 +1,9 @@
 ---
 name: runtime-node-toolchain
 description: Prepare a Node.js runtime for the current repository when runtime inference selects Node.js.
+summary: "Prepare Node.js runtime environment and validate toolchain availability."
+mcp_servers:
+  - shell
 ---
 
 # Node Runtime Provisioner

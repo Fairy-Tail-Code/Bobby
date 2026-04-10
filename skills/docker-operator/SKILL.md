@@ -1,6 +1,9 @@
 ---
 name: docker-operator
 description: Inspect and operate local Docker and Docker Compose environments for delivery workflows.
+summary: "Inspect and operate Docker and Docker Compose environments for delivery workflows."
+mcp_servers:
+  - docker
 ---
 
 # Docker Operator

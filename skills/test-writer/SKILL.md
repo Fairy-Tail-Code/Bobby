@@ -1,6 +1,10 @@
 ---
 name: test-writer
 description: Add, update, and run automated tests for the current delivery plan.
+summary: "Write, update, and run automated tests for the current delivery plan."
+mcp_servers:
+  - workspace
+  - shell
 ---
 
 # Test Writer

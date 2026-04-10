@@ -1,6 +1,10 @@
 ---
 name: fullstack-reviewer
 description: Review fullstack delivery results, produce findings, and decide whether the iteration is acceptable.
+summary: "Review fullstack delivery results, produce findings, and decide acceptability."
+mcp_servers:
+  - workspace
+  - shell
 ---
 
 # Fullstack Reviewer

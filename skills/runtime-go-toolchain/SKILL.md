@@ -1,6 +1,9 @@
 ---
 name: runtime-go-toolchain
 description: Prepare a Go toolchain for the current repository when runtime inference selects Go.
+summary: "Prepare Go runtime environment and validate toolchain availability."
+mcp_servers:
+  - shell
 ---
 
 # Go Runtime Provisioner

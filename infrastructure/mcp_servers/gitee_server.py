@@ -1,14 +1,72 @@
 from __future__ import annotations
 
+import os
 from typing import Any
 
+import httpx
 from mcp.server.fastmcp import FastMCP
 from mcp.types import ToolAnnotations
 
-from openharness.repositories import GiteeBackend
-
 
 gitee_server = FastMCP("openharness-gitee", log_level="ERROR")
+
+_GITEE_BASE_URL = os.environ.get("GITEE_BASE_URL", "https://gitee.com/api/v5")
+
+
+class _GiteeBackend:
+    """Minimal Gitee API client using access token from environment."""
+
+    def __init__(self) -> None:
+        self._token = os.environ.get("GITEE_ACCESS_TOKEN", "")
+        self._base_url = _GITEE_BASE_URL
+
+    def get_current_user(self) -> dict[str, Any]:
+        with httpx.Client(timeout=15) as client:
+            response = client.get(f"{self._base_url}/user", params={"access_token": self._token})
+            response.raise_for_status()
+            return response.json()
+
+    def get_repository(self, owner: str, repo_name: str) -> dict[str, Any] | None:
+        with httpx.Client(timeout=15) as client:
+            response = client.get(
+                f"{self._base_url}/repos/{owner}/{repo_name}",
+                params={"access_token": self._token},
+            )
+            if response.status_code == 404:
+                return None
+            response.raise_for_status()
+            return response.json()
+
+    def create_repository(
+        self,
+        name: str,
+        owner: str | None = None,
+        private: bool = False,
+        description: str | None = None,
+    ) -> dict[str, Any]:
+        payload: dict[str, Any] = {
+            "access_token": self._token,
+            "name": name,
+            "private": private,
+        }
+        if description:
+            payload["description"] = description
+        url = f"{self._base_url}/user/repos"
+        if owner:
+            url = f"{self._base_url}/orgs/{owner}/repos"
+        with httpx.Client(timeout=15) as client:
+            response = client.post(url, json=payload)
+            response.raise_for_status()
+            return response.json()
+
+    def resolve_clone_url(self, payload: dict[str, Any]) -> str | None:
+        ssh_url = payload.get("ssh_url")
+        if isinstance(ssh_url, str) and ssh_url:
+            return ssh_url
+        html_url = payload.get("html_url")
+        if isinstance(html_url, str) and html_url:
+            return f"{html_url}.git"
+        return None
 
 
 def build_gitee_server() -> FastMCP:
@@ -22,7 +80,7 @@ def build_gitee_server() -> FastMCP:
 )
 def get_gitee_current_user() -> dict[str, Any]:
     """Return the current authenticated Gitee user."""
-    payload = GiteeBackend().get_current_user()
+    payload = _GiteeBackend().get_current_user()
     return {
         "ok": True,
         "user": payload,
@@ -35,7 +93,7 @@ def get_gitee_current_user() -> dict[str, Any]:
 )
 def get_gitee_repository(owner: str, repo_name: str) -> dict[str, Any]:
     """Return one Gitee repository payload or a not-found result."""
-    backend = GiteeBackend()
+    backend = _GiteeBackend()
     payload = backend.get_repository(owner.strip(), repo_name.strip())
     if payload is None:
         return {
@@ -63,7 +121,7 @@ def create_gitee_repository(
     description: str | None = None,
 ) -> dict[str, Any]:
     """Create one Gitee repository and return its metadata."""
-    backend = GiteeBackend()
+    backend = _GiteeBackend()
     payload = backend.create_repository(
         name=repo_name.strip(),
         owner=owner.strip() if isinstance(owner, str) and owner.strip() else None,

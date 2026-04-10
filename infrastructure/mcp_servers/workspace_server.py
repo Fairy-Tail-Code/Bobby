@@ -12,6 +12,16 @@ from mcp.types import ToolAnnotations
 
 workspace_server = FastMCP("openharness-workspace", log_level="ERROR")
 
+# Directories to skip during recursive traversal
+_SKIP_DIRS: frozenset[str] = frozenset({
+    ".git", ".svn", ".hg",
+    "node_modules", "__pycache__", ".pytest_cache",
+    ".venv", "venv", "env",
+    ".idea", ".vscode", ".vs",
+    "dist", "build", ".next", ".nuxt",
+    ".tox", ".mypy_cache", ".ruff_cache",
+})
+
 
 @dataclass(frozen=True, slots=True)
 class WorkspacePath:
@@ -27,16 +37,20 @@ def build_workspace_server() -> FastMCP:
 
 
 @workspace_server.tool(
-    description="List files and directories under one path.",
+    description="List files and directories under one path. Default is non-recursive. Use recursive=true to drill into subdirectories.",
     annotations=ToolAnnotations(readOnlyHint=True, idempotentHint=True),
 )
 def list_files(
     path: str = ".",
     cwd: str | None = None,
-    recursive: bool = True,
-    max_entries: int = 500,
+    recursive: bool = False,
+    max_entries: int = 200,
 ) -> dict[str, Any]:
-    """List directory entries relative to one root path."""
+    """List directory entries relative to one root path.
+
+    Non-recursive by default to prevent context explosion.
+    Skips known junk directories (.git, node_modules, __pycache__, etc.).
+    """
     if max_entries <= 0:
         raise ValueError("Tool 'list_files' field 'max_entries' must be a positive integer.")
     resolved = _resolve_workspace_path(path, cwd=cwd)
@@ -45,17 +59,27 @@ def list_files(
     if not resolved.path.is_dir():
         raise ValueError(f"Path '{resolved.path}' is not a directory.")
 
-    iterator = resolved.path.rglob("*") if recursive else resolved.path.iterdir()
     entries: list[dict[str, Any]] = []
-    for current_path in sorted(iterator):
-        if len(entries) >= max_entries:
-            break
-        entries.append(
-            {
-                "path": _render_relative_path(current_path, resolved.root),
-                "type": "dir" if current_path.is_dir() else "file",
-            }
-        )
+    if recursive:
+        for current_path in _safe_rglob(resolved.path):
+            if len(entries) >= max_entries:
+                break
+            entries.append(
+                {
+                    "path": _render_relative_path(current_path, resolved.root),
+                    "type": "dir" if current_path.is_dir() else "file",
+                }
+            )
+    else:
+        for current_path in sorted(resolved.path.iterdir()):
+            if len(entries) >= max_entries:
+                break
+            entries.append(
+                {
+                    "path": _render_relative_path(current_path, resolved.root),
+                    "type": "dir" if current_path.is_dir() else "file",
+                }
+            )
     return {
         "ok": True,
         "root": str(resolved.root),
@@ -375,8 +399,20 @@ def _iter_candidate_files(path: Path, *, glob: str | None) -> tuple[Path, ...]:
     if path.is_file():
         return (path,)
     if glob:
-        return tuple(sorted(candidate for candidate in path.rglob(glob) if candidate.is_file()))
-    return tuple(sorted(candidate for candidate in path.rglob("*") if candidate.is_file()))
+        return tuple(sorted(candidate for candidate in _safe_rglob(path, pattern=glob) if candidate.is_file()))
+    return tuple(sorted(candidate for candidate in _safe_rglob(path) if candidate.is_file()))
+
+
+def _safe_rglob(root: Path, pattern: str = "*") -> list[Path]:
+    """Recursive glob that skips known junk directories."""
+    results: list[Path] = []
+    for entry in sorted(root.rglob(pattern)):
+        # Skip entries inside junk directories (check entry name + all parent names)
+        names = {entry.name} | {p.name for p in entry.relative_to(root).parents if p.name}
+        if names & _SKIP_DIRS:
+            continue
+        results.append(entry)
+    return results
 
 
 def _resolve_workspace_path(path: str, *, cwd: str | None) -> WorkspacePath:

@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import asyncio
 import logging
 from contextlib import AsyncExitStack
 from dataclasses import dataclass
@@ -11,6 +12,10 @@ from mcp.client.stdio import stdio_client
 from infrastructure.config import McpServerConfig
 
 logger = logging.getLogger(__name__)
+
+# Default client-side timeout for any MCP tool call.
+# Acts as a safety net when the server-side timeout fails or the stdio channel stalls.
+_DEFAULT_TOOL_TIMEOUT_S = 180  # 3 minutes
 
 
 @dataclass
@@ -51,13 +56,20 @@ class McpManager:
             args=config.args,
         )
         exit_stack = AsyncExitStack()
-        read_stream, write_stream = await exit_stack.enter_async_context(
-            stdio_client(server_params)
-        )
-        session = await exit_stack.enter_async_context(
-            ClientSession(read_stream, write_stream)
-        )
-        await session.initialize()
+        try:
+            read_stream, write_stream = await exit_stack.enter_async_context(
+                stdio_client(server_params)
+            )
+            session = await exit_stack.enter_async_context(
+                ClientSession(read_stream, write_stream)
+            )
+            await session.initialize()
+        except BaseException:
+            try:
+                await exit_stack.aclose()
+            except BaseException:
+                pass
+            raise
 
         tools_result = await session.list_tools()
         tool_infos = [
@@ -81,13 +93,37 @@ class McpManager:
             [t.tool_name for t in tool_infos],
         )
 
-    async def call_tool(self, server_name: str, tool_name: str, arguments: dict[str, Any]) -> str:
-        """Call a tool on an MCP server and return the result as text."""
+    async def call_tool(
+        self,
+        server_name: str,
+        tool_name: str,
+        arguments: dict[str, Any],
+        timeout_s: float = _DEFAULT_TOOL_TIMEOUT_S,
+    ) -> str:
+        """Call a tool on an MCP server and return the result as text.
+
+        A client-side timeout prevents the swarm from hanging when the
+        MCP server process stalls or the stdio channel blocks.
+        """
         session = self._sessions.get(server_name)
         if session is None:
             raise ValueError(f"Not connected to MCP server: {server_name}")
 
-        result = await session.call_tool(tool_name, arguments)
+        try:
+            result = await asyncio.wait_for(
+                session.call_tool(tool_name, arguments),
+                timeout=timeout_s,
+            )
+        except asyncio.TimeoutError:
+            logger.error(
+                "MCP tool call '%s/%s' timed out after %.0fs",
+                server_name, tool_name, timeout_s,
+            )
+            return (
+                f"ERROR: MCP tool '{server_name}/{tool_name}' timed out "
+                f"after {timeout_s:.0f}s. The command may still be running."
+            )
+
         if result.content:
             return "\n".join(
                 c.text if hasattr(c, "text") else str(c)
@@ -98,7 +134,10 @@ class McpManager:
     async def disconnect(self, server_name: str) -> None:
         """Disconnect from an MCP server."""
         if server_name in self._exit_stacks:
-            await self._exit_stacks[server_name].aclose()
+            try:
+                await self._exit_stacks[server_name].aclose()
+            except BaseException:
+                logger.debug("Swallowed cleanup error for MCP server '%s'", server_name, exc_info=True)
             del self._exit_stacks[server_name]
         self._sessions.pop(server_name, None)
         self._tools.pop(server_name, None)

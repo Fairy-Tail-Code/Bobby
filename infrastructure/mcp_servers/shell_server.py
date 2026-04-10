@@ -1,19 +1,173 @@
+"""Shell MCP server with safety guardrails inspired by Claude Code / Codex sandboxes.
+
+Safety layers:
+1. Block dangerous command patterns (recursive ops, system destruction, etc.)
+2. Block interactive commands that hang the stdio channel
+3. Truncate output to prevent context explosion
+4. Timeout enforcement (already existed, kept)
+"""
 from __future__ import annotations
 
+import re
+import subprocess
+import os
 from dataclasses import dataclass, field
 from pathlib import Path
-import os
-import subprocess
 from threading import Lock, Thread
-from uuid import uuid4
 from typing import Any
+from uuid import uuid4
 
 from mcp.server.fastmcp import FastMCP
 from mcp.types import ToolAnnotations
 
-
 shell_server = FastMCP("openharness-shell", log_level="ERROR")
 
+# ---------------------------------------------------------------------------
+# Safety: command validation
+# ---------------------------------------------------------------------------
+
+_BLOCKED_PATTERNS: list[tuple[re.Pattern[str], str]] = [
+    # --- recursive directory traversal (context explosion) ---
+    (
+        re.compile(r"\bdir\s+/s\b", re.IGNORECASE),
+        "Recursive `dir /s` can produce massive output. Use workspace `list_files` instead.",
+    ),
+    (
+        re.compile(r"\btree\s+/f\b", re.IGNORECASE),
+        "Recursive `tree /f` can produce massive output. Use workspace `list_files` instead.",
+    ),
+    (
+        re.compile(r"\bGet-ChildItem\s+-Recurse\b", re.IGNORECASE),
+        "Recursive listing can produce massive output. Use workspace `list_files` instead.",
+    ),
+    (
+        re.compile(r"\bfind\s+\.\s+-type\b"),
+        "Recursive `find` can produce massive output. Use workspace `list_files` instead.",
+    ),
+    (
+        re.compile(r"\bfind\s+/[sr]\b", re.IGNORECASE),
+        "Recursive `find` can produce massive output. Use workspace `list_files` instead.",
+    ),
+    # --- destructive file / directory operations ---
+    (
+        re.compile(r"\brm\s+-rf\s+/"),
+        "Recursive force-delete from root is not allowed.",
+    ),
+    (
+        re.compile(r"\brm\s+-[a-zA-Z]*r[a-zA-Z]*\s+/"),
+        "Recursive delete from root is not allowed.",
+    ),
+    (
+        re.compile(r"\brmdir\s+/s\b", re.IGNORECASE),
+        "Recursive `rmdir /s` is not allowed. Delete directories explicitly.",
+    ),
+    (
+        re.compile(r"\bdel\s+/[sf]\b", re.IGNORECASE),
+        "Recursive/force delete is not allowed. Delete files explicitly.",
+    ),
+    (
+        re.compile(r"\brd\s+/[sf]\b", re.IGNORECASE),
+        "Recursive/force delete is not allowed. Delete directories explicitly.",
+    ),
+    # --- system-level operations ---
+    (
+        re.compile(r"\b(format\s+[a-zA-Z]:)\b", re.IGNORECASE),
+        "Disk format is not allowed.",
+    ),
+    (
+        re.compile(r"\bdd\s+if="),
+        "Raw disk operations are not allowed.",
+    ),
+    (
+        re.compile(r"\b(shutdown|reboot|halt|poweroff)\b", re.IGNORECASE),
+        "System power commands are not allowed.",
+    ),
+    (
+        re.compile(r"\breg\s+(add|delete|import)\b", re.IGNORECASE),
+        "Registry modification is not allowed.",
+    ),
+    (
+        re.compile(r"\bbcdedit\b", re.IGNORECASE),
+        "Boot configuration modification is not allowed.",
+    ),
+    (
+        re.compile(r"\bdiskpart\b", re.IGNORECASE),
+        "Disk partition management is not allowed.",
+    ),
+    # --- network exfiltration ---
+    (
+        re.compile(r"\bcurl\b.*\|\s*(bash|sh|pwsh|python)"),
+        "Piping remote content to a shell is not allowed.",
+    ),
+    (
+        re.compile(r"\bwget\b.*\|\s*(bash|sh|pwsh|python)"),
+        "Piping remote content to a shell is not allowed.",
+    ),
+    (
+        re.compile(r"\biex\b.*\b(irm|Invoke-WebRequest)\b"),
+        "PowerShell remote script execution is not allowed.",
+    ),
+    # --- interactive commands (hang stdio MCP channel) ---
+    (
+        re.compile(r"\b(python|node|ipython|php|irb|lua|sqlite3|mysql|psql)\s*$"),
+        "Interactive REPLs are not allowed. Run non-interactive commands only.",
+    ),
+    (
+        re.compile(r"\b(vim|vi|nano|emacs|less|more|code)\b"),
+        "Interactive editors/pagers are not allowed.",
+    ),
+    (
+        re.compile(r"\b(cmd|powershell|bash|sh|zsh)\s*$"),
+        "Interactive subshells are not allowed. Run specific commands instead.",
+    ),
+    (
+        re.compile(r"\bssh\s+"),
+        "Interactive SSH sessions are not allowed.",
+    ),
+    (
+        re.compile(r"\btelnet\b"),
+        "Interactive telnet sessions are not allowed.",
+    ),
+]
+
+# Write-like command patterns that modify filesystem
+_WRITE_PATTERNS: list[re.Pattern[str]] = [
+    re.compile(r"\b(git\s+push|git\s+reset\s+--hard|git\s+clean)\b", re.IGNORECASE),
+]
+
+
+def _validate_command(cmd: str) -> str | None:
+    """Return a human-readable rejection reason, or None if the command is safe."""
+    for pattern, reason in _BLOCKED_PATTERNS:
+        if pattern.search(cmd):
+            return reason
+    return None
+
+
+# ---------------------------------------------------------------------------
+# Safety: output truncation
+# ---------------------------------------------------------------------------
+
+_MAX_OUTPUT_CHARS = 50_000
+
+
+def _truncate(text: str, limit: int = _MAX_OUTPUT_CHARS) -> str:
+    """Keep head + tail of output, inject a truncation notice in the middle."""
+    if len(text) <= limit:
+        return text
+    head = int(limit * 0.7)
+    tail = int(limit * 0.2)
+    omitted = len(text) - head - tail
+    return (
+        text[:head]
+        + f"\n\n... TRUNCATED {omitted:,} chars (total {len(text):,}) ...\n\n"
+        + text[-tail:]
+    )
+
+
+# ---------------------------------------------------------------------------
+# Background command sessions
+# ---------------------------------------------------------------------------
 
 @dataclass(slots=True)
 class CommandSession:
@@ -34,6 +188,10 @@ def build_shell_server() -> FastMCP:
     return shell_server
 
 
+# ---------------------------------------------------------------------------
+# Tools
+# ---------------------------------------------------------------------------
+
 @shell_server.tool(
     description="Run one shell command and wait for completion.",
     annotations=ToolAnnotations(
@@ -53,21 +211,52 @@ def run_command(
         raise ValueError("Tool 'run_command' field 'cmd' must be a non-empty string.")
     if timeout_ms <= 0:
         raise ValueError("Tool 'run_command' field 'timeout_ms' must be a positive integer.")
-    completed_process = subprocess.run(
-        cmd,
-        cwd=_resolve_cwd(cwd),
-        env=_build_command_env(env),
-        shell=True,
-        text=True,
-        capture_output=True,
-        timeout=timeout_ms / 1000.0,
-    )
+
+    rejection = _validate_command(cmd)
+    if rejection:
+        return {
+            "ok": False,
+            "cmd": cmd,
+            "cwd": str(_resolve_cwd(cwd)),
+            "stdout": "",
+            "stderr": f"Command blocked: {rejection}",
+            "exit_code": -1,
+        }
+
+    try:
+        completed_process = subprocess.run(
+            cmd,
+            cwd=_resolve_cwd(cwd),
+            env=_build_command_env(env),
+            shell=True,
+            text=True,
+            capture_output=True,
+            timeout=timeout_ms / 1000.0,
+        )
+    except subprocess.TimeoutExpired:
+        return {
+            "ok": False,
+            "cmd": cmd,
+            "cwd": str(_resolve_cwd(cwd)),
+            "stdout": "",
+            "stderr": f"Command timed out after {timeout_ms / 1000:.0f}s. Use start_command for long-running processes.",
+            "exit_code": -1,
+        }
+    except Exception as exc:
+        return {
+            "ok": False,
+            "cmd": cmd,
+            "cwd": str(_resolve_cwd(cwd)),
+            "stdout": "",
+            "stderr": f"Command failed to execute: {exc}",
+            "exit_code": -1,
+        }
     return {
         "ok": completed_process.returncode == 0,
         "cmd": cmd,
         "cwd": str(_resolve_cwd(cwd)),
-        "stdout": completed_process.stdout,
-        "stderr": completed_process.stderr,
+        "stdout": _truncate(completed_process.stdout),
+        "stderr": _truncate(completed_process.stderr),
         "exit_code": completed_process.returncode,
     }
 
@@ -88,6 +277,17 @@ def start_command(
     """Start one shell command without waiting for completion."""
     if not cmd.strip():
         raise ValueError("Tool 'start_command' field 'cmd' must be a non-empty string.")
+
+    rejection = _validate_command(cmd)
+    if rejection:
+        return {
+            "ok": False,
+            "session_id": "",
+            "cmd": cmd,
+            "cwd": str(_resolve_cwd(cwd)),
+            "error": f"Command blocked: {rejection}",
+        }
+
     process = subprocess.Popen(
         cmd,
         cwd=_resolve_cwd(cwd),
@@ -131,8 +331,8 @@ def read_command_output(
     return {
         "ok": True,
         "session_id": session_id,
-        "stdout": stdout_value[stdout_cursor:],
-        "stderr": stderr_value[stderr_cursor:],
+        "stdout": _truncate(stdout_value[stdout_cursor:]),
+        "stderr": _truncate(stderr_value[stderr_cursor:]),
         "stdout_cursor": len(stdout_value),
         "stderr_cursor": len(stderr_value),
         "running": exit_code is None,
@@ -186,6 +386,10 @@ def terminate_command(session_id: str) -> dict[str, Any]:
         "exit_code": session.process.poll(),
     }
 
+
+# ---------------------------------------------------------------------------
+# Internal helpers
+# ---------------------------------------------------------------------------
 
 def _start_stream_reader(*, session: CommandSession, stream_name: str) -> None:
     """Start one daemon thread that drains a subprocess stream into memory."""

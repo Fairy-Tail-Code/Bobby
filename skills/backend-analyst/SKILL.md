@@ -1,6 +1,9 @@
 ---
 name: backend-analyst
 description: Translate a backend PRD into an implementation brief, design, and delivery plan.
+summary: "Translate backend PRD into an implementation brief, design plan, and delivery steps."
+mcp_servers:
+  - workspace
 ---
 
 # Backend Analyst

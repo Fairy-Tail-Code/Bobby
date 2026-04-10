@@ -1,6 +1,10 @@
 ---
 name: bug-fixer
 description: Diagnose failing tests or runtime errors, apply focused fixes, and add regression coverage when needed.
+summary: "Diagnose failures, apply targeted fixes, and add regression test coverage."
+mcp_servers:
+  - workspace
+  - shell
 ---
 
 # Bug Fixer

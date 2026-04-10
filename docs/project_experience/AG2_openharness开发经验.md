@@ -43,3 +43,37 @@
 - `config/mcp.yaml` — 指向本地 MCP 服务器模块
 - `tests/test_config.py` — 改为测试 .env 加载
 - `tests/test_e2e.py` — 改为测试 swarm handoffs
+
+## 2026-04-10
+
+### 架构决策
+
+#### MCP 全量启用 + Skill-MCP 对齐 + 渐进式披露
+- **原因**：原先只有 shell MCP 启用，skill 和 MCP 无依赖关系声明，所有 skill 全量注入 system message，浪费 context window
+- **三合一改进**：
+  1. **MCP 全量启用**：mcp.yaml 中 9 个服务器全部取消注释
+  2. **声明式依赖**：SKILL.md frontmatter 新增 `summary` 和 `mcp_servers` 字段，启动时校验 skill-MCP 对齐
+  3. **渐进式披露**：system message 只注入 skill 摘要目录，agent 通过 `load_skill` tool 按需获取完整指令
+
+#### SkillRegistry 替代 SkillLoader
+- **原因**：SkillLoader 只能列出和加载指令，无法表达依赖、校验对齐、生成摘要
+- **SkillRegistry 新增能力**：
+  - 解析 frontmatter 中的 `mcp_servers` 依赖声明
+  - `validate_alignment()` 校验 skill 依赖的 MCP 是否已连接
+  - `build_summary_block()` 生成紧凑的摘要目录用于注入
+  - `load_instruction()` 保留原有能力
+
+#### load_skill Tool
+- 每个 agent 注册一个 `load_skill` AG2 Tool
+- Agent 调用 `load_skill("browser-tester")` 获取完整 SKILL.md 内容
+- 只允许加载分配给当前 agent 的 skill，防止越权
+
+### 文件变更清单
+- `config/mcp.yaml` — 取消注释，全部 9 个 MCP 服务器启用
+- `skills/*/SKILL.md` — 15 个文件新增 `summary` 和 `mcp_servers` frontmatter 字段
+- `infrastructure/skills/registry.py` — 新建 SkillRegistry、SkillMeta、AlignmentIssue
+- `infrastructure/skills/tool.py` — 新建 load_skill tool 的创建和注册函数
+- `infrastructure/skills/__init__.py` — 更新 re-export
+- `agents/factory.py` — 改用 SkillRegistry，注入摘要替代全量指令，注册 load_skill tool
+- `main.py` — 改用 SkillRegistry，增加对齐校验逻辑
+- `tests/test_skill_loader.py` — 重写为 SkillRegistry 测试（10 个用例全通过）
