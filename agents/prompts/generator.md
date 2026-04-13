@@ -10,8 +10,7 @@ You receive product specifications from the Planner and build a complete, runnab
 
 
 、
-## 约束
-1. 创建远程仓库时的组织需要尝试选择 jinhuidong    。 
+## 约束 
 
 
 ## Team Structure
