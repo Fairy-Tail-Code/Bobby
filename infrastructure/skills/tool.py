@@ -39,11 +39,18 @@ def register_load_skill_tool(
     skill_registry: SkillRegistry,
     available_skills: list[str],
 ) -> None:
-    """Register the load_skill tool for an agent."""
+    """Register the load_skill tool for an agent.
+
+    Uses a unique tool name per agent (e.g. ``load_skill__planner``) to avoid
+    name collisions when multiple agents coexist in the same group chat.
+    The LLM-facing description still refers to the tool as "load_skill" so the
+    agent's prompt does not need to change.
+    """
     tool_func = create_load_skill_tool_func(skill_registry, available_skills)
+    unique_name = f"load_skill__{agent.name}"
 
     ag2_tool = Tool(
-        name="load_skill",
+        name=unique_name,
         description=(
             "Load the full instructions for a named skill. "
             "Use this when you need detailed guidance for a specific task. "
@@ -63,4 +70,4 @@ def register_load_skill_tool(
     )
     ag2_tool.register_for_llm(agent)
     ag2_tool.register_for_execution(agent)
-    logger.debug("Registered load_skill tool for agent '%s'", agent.name)
+    logger.debug("Registered %s tool for agent '%s'", unique_name, agent.name)

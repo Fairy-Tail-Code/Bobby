@@ -38,6 +38,7 @@ GENERATOR_SKILLS = [
     "runtime-python-toolchain",
     "runtime-node-toolchain",
     "runtime-go-toolchain",
+    "claude-code",
 ]
 
 EVALUATOR_SKILLS = [
@@ -107,7 +108,6 @@ def create_evaluator_agent(
         register_load_skill_tool(agent, skill_registry, EVALUATOR_SKILLS)
     return agent
 
-
 def setup_handoffs(agents: dict[str, ConversableAgent]) -> None:
     """Set up swarm handoff conditions between agents.
 
@@ -127,11 +127,11 @@ def setup_handoffs(agents: dict[str, ConversableAgent]) -> None:
     planner.handoffs.add_llm_conditions([
         OnCondition(
             target=AgentTarget(generator),
-            condition=StringLLMCondition("TRANSFER TO GENERATOR"),
+            condition=StringLLMCondition("TRANSFER TO GENERATOR,当plan撰写完成并需要将计划交接给generator开始编程时，或者当generator提出了问题需要向generator回答时"),
         ),
         OnCondition(
             target=AgentTarget(evaluator),
-            condition=StringLLMCondition("TRANSFER TO EVALUATOR"),
+            condition=StringLLMCondition("TRANSFER TO EVALUATOR,当plan撰写完成并需要将计划交接给evaluator时，用于evaluator等待generator完成后根据计划进行验证"),
         ),
     ]).set_after_work(StayTarget())
 
@@ -139,11 +139,11 @@ def setup_handoffs(agents: dict[str, ConversableAgent]) -> None:
     generator.handoffs.add_llm_conditions([
         OnCondition(
             target=AgentTarget(evaluator),
-            condition=StringLLMCondition("TRANSFER TO EVALUATOR"),
+            condition=StringLLMCondition("TRANSFER TO EVALUATOR，当代码编写完成需要交给reviewer检查时"),
         ),
         OnCondition(
             target=AgentTarget(planner),
-            condition=StringLLMCondition("TRANSFER TO PLANNER"),
+            condition=StringLLMCondition("TRANSFER TO PLANNER，当信息不足期望向planner询问更多信息时"),
         ),
     ]).set_after_work(StayTarget())
 
@@ -158,7 +158,6 @@ def setup_handoffs(agents: dict[str, ConversableAgent]) -> None:
             condition=StringLLMCondition("TRANSFER TO PLANNER"),
         ),
     ]).set_after_work(TerminateTarget())
-
 
 def create_all_agents(
     llm_config: LlmConfig,
