@@ -23,4 +23,10 @@ harness:
     version_control: "git"
 
   context:
-    strategy: "compaction"
+    enabled: true
+    # Level 1: Snip Compact — keep only the most recent messages
+    max_messages: 100
+    keep_first_message: true
+    # Level 4: Auto Compact — LLM summarization when approaching token limit
+    max_tokens: 200000
+    auto_compact_enabled: true

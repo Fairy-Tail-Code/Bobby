@@ -12,11 +12,16 @@ from autogen.agentchat.group.llm_condition import StringLLMCondition
 from agents.planner import create_planner
 from agents.generator import create_generator
 from agents.evaluator import create_evaluator
-from infrastructure.config import LlmConfig
+from agents.user import create_user
+from infrastructure.config import ContextConfig, HarnessConfig, LlmConfig
+from infrastructure.context.auto_compact import AutoCompactTransform
+from infrastructure.context.snip import create_snip_transform
 from infrastructure.mcp.manager import McpManager
 from infrastructure.mcp.tool_bridge import register_tools_for_agent
 from infrastructure.skills.registry import SkillRegistry
 from infrastructure.skills.tool import register_load_skill_tool
+
+
 
 logger = logging.getLogger(__name__)
 
@@ -66,6 +71,48 @@ def _inject_skill_summaries(
         agent.update_system_message(original + "\n\n" + summary_block)
 
 
+def _register_context_transforms(
+    agent: ConversableAgent,
+    context_config: ContextConfig,
+) -> None:
+    """Register Level 1 (Snip) and Level 4 (Auto Compact) transforms on an agent.
+
+    Both transforms hook into AG2's ``process_all_messages_before_reply`` so
+    they run automatically on every reply generation — zero orchestration code
+    needed.
+    """
+    if not context_config.enabled:
+        return
+
+    transforms: list = []
+
+    # Level 1: Snip Compact — message count limiter (AG2 built-in)
+    snip = create_snip_transform(
+        max_messages=context_config.max_messages,
+        keep_first_message=context_config.keep_first_message,
+    )
+    transforms.append(snip)
+
+    # Level 4: Auto Compact — LLM summarisation
+    if context_config.auto_compact_enabled:
+        auto_compact = AutoCompactTransform(
+            agent=agent,
+            max_tokens=context_config.max_tokens,
+        )
+        from autogen.agentchat.contrib.capabilities.transform_messages import TransformMessages
+        auto_compact_wrapper = TransformMessages(transforms=[auto_compact])
+        transforms.append(auto_compact_wrapper)
+
+    # Apply all transforms to the agent
+    for transform in transforms:
+        transform.add_to_agent(agent)
+
+    logger.info(
+        "Registered %d context transform(s) on agent '%s'",
+        len(transforms), agent.name,
+    )
+
+
 def create_planner_agent(
     llm_config: LlmConfig,
     mcp_manager: McpManager | None = None,
@@ -108,6 +155,11 @@ def create_evaluator_agent(
         register_load_skill_tool(agent, skill_registry, EVALUATOR_SKILLS)
     return agent
 
+def creat_user_agent(
+    llm_config: LlmConfig,
+):
+    agent = create_user(llm_config)
+    return agent
 def setup_handoffs(agents: dict[str, ConversableAgent]) -> None:
     """Set up swarm handoff conditions between agents.
 
@@ -122,6 +174,7 @@ def setup_handoffs(agents: dict[str, ConversableAgent]) -> None:
     planner = agents["planner"]
     generator = agents["generator"]
     evaluator = agents["evaluator"]
+    user = agents["user"]
 
     planner.handoffs = Handoffs()
     planner.handoffs.add_llm_conditions([
@@ -132,6 +185,11 @@ def setup_handoffs(agents: dict[str, ConversableAgent]) -> None:
         OnCondition(
             target=AgentTarget(evaluator),
             condition=StringLLMCondition("TRANSFER TO EVALUATOR,当plan撰写完成并需要将计划交接给evaluator时，用于evaluator等待generator完成后根据计划进行验证"),
+        ),
+        OnCondition(
+            target=AgentTarget(user),
+            condition=StringLLMCondition(
+                "TRANSFER TO USER,当你针对某一点模糊的信息需要用户明确/补充时，这个行为需要积极触发，目前默认至少触发一次"),
         ),
     ]).set_after_work(StayTarget())
 
@@ -145,6 +203,10 @@ def setup_handoffs(agents: dict[str, ConversableAgent]) -> None:
             target=AgentTarget(planner),
             condition=StringLLMCondition("TRANSFER TO PLANNER，当信息不足期望向planner询问更多信息时"),
         ),
+        OnCondition(
+            target=AgentTarget(user),
+            condition=StringLLMCondition("TRANSFER TO USER，执行风险操作时征求用户意见"),
+        ),
     ]).set_after_work(StayTarget())
 
     evaluator.handoffs = Handoffs()
@@ -157,18 +219,31 @@ def setup_handoffs(agents: dict[str, ConversableAgent]) -> None:
             target=AgentTarget(planner),
             condition=StringLLMCondition("TRANSFER TO PLANNER"),
         ),
+        OnCondition(
+            target=AgentTarget(user),
+            condition=StringLLMCondition("TRANSFER TO USER，执行风险操作时征求用户意见"),
+        ),
     ]).set_after_work(TerminateTarget())
-
+    user.handoffs = Handoffs()
+    user.handoffs.set_after_work(AgentTarget(planner))
 def create_all_agents(
     llm_config: LlmConfig,
     mcp_manager: McpManager,
     skill_registry: SkillRegistry | None = None,
+    harness_config: HarnessConfig | None = None,
 ) -> dict[str, ConversableAgent]:
     """Create all three agents with their tools, skills, and handoffs."""
     agents = {
         "planner": create_planner_agent(llm_config, mcp_manager, skill_registry),
         "generator": create_generator_agent(llm_config, mcp_manager, skill_registry),
         "evaluator": create_evaluator_agent(llm_config, mcp_manager, skill_registry),
+        "user":creat_user_agent(llm_config, ),
     }
+
+    # Register context compression transforms (Level 1 + Level 4)
+    if harness_config and harness_config.context.enabled:
+        for agent in agents.values():
+            _register_context_transforms(agent, harness_config.context)
+
     setup_handoffs(agents)
     return agents

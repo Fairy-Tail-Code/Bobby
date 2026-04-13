@@ -38,6 +38,7 @@ dependencies = [
     { name = "pip" },
     { name = "playwright" },
     { name = "pyyaml" },
+    { name = "tiktoken" },
 ]
 
 [package.metadata]
@@ -47,6 +48,7 @@ requires-dist = [
     { name = "pip", specifier = ">=26.0.1" },
     { name = "playwright", specifier = ">=1.58.0" },
     { name = "pyyaml", specifier = ">=6.0.3" },
+    { name = "tiktoken", specifier = ">=0.9.0" },
 ]
 
 [[package]]

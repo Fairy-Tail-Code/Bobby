@@ -60,11 +60,12 @@ async def run(prompt: str) -> None:
     try:
         # Create agents with skills and handoffs
         logger.info("Creating agents with skills and swarm handoffs...")
-        agents_dict = create_all_agents(llm_config, mcp_manager, skill_registry)
+        agents_dict = create_all_agents(llm_config, mcp_manager, skill_registry, harness_config)
         agents_list = [
             agents_dict["planner"],
             agents_dict["generator"],
             agents_dict["evaluator"],
+            agents_dict["user"],
         ]
 
         # Run swarm chat

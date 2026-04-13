@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import os
 from pathlib import Path
 import subprocess
 from typing import Any
@@ -322,6 +323,9 @@ def clone_git_repository(
         ["git", "clone", normalized_repo_url, str(destination)],
         text=True,
         capture_output=True,
+        stdin=subprocess.DEVNULL,
+        env=_git_env(),
+        timeout=300,
     )
     if completed_process.returncode != 0:
         stderr = completed_process.stderr.strip() or completed_process.stdout.strip()
@@ -428,13 +432,25 @@ def list_git_changed_paths(repo_path: str = ".", cwd: str | None = None) -> dict
     }
 
 
-def _run_git_command(repo_root: Path, args: list[str]) -> subprocess.CompletedProcess[str]:
+def _git_env() -> dict[str, str]:
+    """Return a copy of the current environment with git interactive prompts disabled."""
+    env = os.environ.copy()
+    # Prevent git from opening an interactive prompt (credential helper, confirm, etc.)
+    # which would deadlock the MCP stdio channel.
+    env["GIT_TERMINAL_PROMPT"] = "0"
+    return env
+
+
+def _run_git_command(repo_root: Path, args: list[str], timeout: int = 60) -> subprocess.CompletedProcess[str]:
     """Run one git command in a repository root."""
     completed_process = subprocess.run(
         ["git", *args],
         cwd=repo_root,
         text=True,
         capture_output=True,
+        stdin=subprocess.DEVNULL,
+        env=_git_env(),
+        timeout=timeout,
     )
     if completed_process.returncode != 0:
         stderr = completed_process.stderr.strip() or completed_process.stdout.strip()
@@ -457,6 +473,9 @@ def _resolve_git_repo_root(repo_path: str, *, cwd: str | None) -> Path:
         cwd=target_dir,
         text=True,
         capture_output=True,
+        stdin=subprocess.DEVNULL,
+        env=_git_env(),
+        timeout=10,
     )
     if completed_process.returncode != 0:
         raise ValueError(f"Path '{resolved_path}' is not inside a git repository.")

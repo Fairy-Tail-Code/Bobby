@@ -55,16 +55,28 @@ class EvaluationDimension:
 
 
 @dataclass
+class ContextConfig:
+    """Configuration for the context compression pipeline."""
+    enabled: bool = True
+    # Level 1 — Snip Compact
+    max_messages: int = 60
+    keep_first_message: bool = True
+    # Level 4 — Auto Compact
+    max_tokens: int = 80_000
+    auto_compact_enabled: bool = True
+
+
+@dataclass
 class HarnessConfig:
     max_rounds: int = 15
     score_threshold: int = 7
     dimensions: list[EvaluationDimension] = field(default_factory=list)
     tech_stack: dict[str, str] = field(default_factory=dict)
-    context_strategy: str = "compaction"
+    context: ContextConfig = field(default_factory=ContextConfig)
 
 
 def _load_yaml(path: Path) -> dict:
-    with open(path) as f:
+    with open(path, encoding="utf-8") as f:
         return yaml.safe_load(f)
 
 
@@ -115,10 +127,18 @@ def load_harness_config(config_dir: Path) -> HarnessConfig:
     raw = _load_yaml(config_dir / "harness.yaml")["harness"]
     eval_cfg = raw["evaluation"]
     dimensions = [EvaluationDimension(**d) for d in eval_cfg["dimensions"]]
+    ctx_raw = raw.get("context", {})
+    context = ContextConfig(
+        enabled=ctx_raw.get("enabled", True),
+        max_messages=ctx_raw.get("max_messages", 60),
+        keep_first_message=ctx_raw.get("keep_first_message", True),
+        max_tokens=ctx_raw.get("max_tokens", 80_000),
+        auto_compact_enabled=ctx_raw.get("auto_compact_enabled", True),
+    )
     return HarnessConfig(
         max_rounds=eval_cfg["max_rounds"],
         score_threshold=eval_cfg["score_threshold"],
         dimensions=dimensions,
         tech_stack=raw.get("tech_stack", {}),
-        context_strategy=raw.get("context", {}).get("strategy", "compaction"),
+        context=context,
     )
