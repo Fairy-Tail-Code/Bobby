@@ -35,6 +35,7 @@ PLANNER_SKILLS = [
 ]
 
 GENERATOR_SKILLS = [
+    "acpx",
     "backend-delivery",
     "frontend-delivery",
     "bug-fixer",
@@ -43,7 +44,6 @@ GENERATOR_SKILLS = [
     "runtime-python-toolchain",
     "runtime-node-toolchain",
     "runtime-go-toolchain",
-    "claude-code",
 ]
 
 EVALUATOR_SKILLS = [
@@ -264,7 +264,9 @@ def create_all_agents(
 
     agents: dict[str, ConversableAgent] = {
         "planner": create_planner_agent(llm_config, mcp_manager, skill_registry),
-        "generator": create_generator_agent(llm_config, mcp_manager, skill_registry),
+        "generator": create_generator_agent(
+            llm_config, mcp_manager, skill_registry,
+        ),
         "evaluator": create_evaluator_agent(llm_config, mcp_manager, skill_registry),
     }
 

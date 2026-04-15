@@ -36,3 +36,8 @@ harness:
     polling_interval: 30     # seconds between IMAP checks
     timeout: 3600            # max seconds to wait for a reply
     subject_prefix: "[OpenHarness]"
+
+  acpx:
+    agent: claude             # acpx agent: claude / codex / gemini
+    default_timeout: 600      # 单次任务超时（秒）
+    max_sessions: 3           # 最大并行会话数
