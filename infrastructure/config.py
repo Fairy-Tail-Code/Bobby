@@ -67,12 +67,39 @@ class ContextConfig:
 
 
 @dataclass
+class SmtpConfig:
+    host: str
+    port: int = 587
+    user: str = ""
+    password: str = ""
+    use_tls: bool = True
+
+
+@dataclass
+class ImapConfig:
+    host: str
+    port: int = 993
+    user: str = ""
+    password: str = ""
+    use_ssl: bool = True
+
+
+@dataclass
+class HitlConfig:
+    mode: str = "stdin"  # "email" or "stdin"
+    polling_interval: int = 30  # seconds between IMAP checks
+    timeout: int = 3600  # max seconds to wait for a reply
+    subject_prefix: str = "[OpenHarness]"
+
+
+@dataclass
 class HarnessConfig:
     max_rounds: int = 15
     score_threshold: int = 7
     dimensions: list[EvaluationDimension] = field(default_factory=list)
     tech_stack: dict[str, str] = field(default_factory=dict)
     context: ContextConfig = field(default_factory=ContextConfig)
+    hitl: HitlConfig = field(default_factory=HitlConfig)
 
 
 def _load_yaml(path: Path) -> dict:
@@ -135,10 +162,49 @@ def load_harness_config(config_dir: Path) -> HarnessConfig:
         max_tokens=ctx_raw.get("max_tokens", 80_000),
         auto_compact_enabled=ctx_raw.get("auto_compact_enabled", True),
     )
+    hitl_raw = raw.get("hitl", {})
+    hitl = HitlConfig(
+        mode=hitl_raw.get("mode", "stdin"),
+        polling_interval=hitl_raw.get("polling_interval", 30),
+        timeout=hitl_raw.get("timeout", 3600),
+        subject_prefix=hitl_raw.get("subject_prefix", "[OpenHarness]"),
+    )
     return HarnessConfig(
         max_rounds=eval_cfg["max_rounds"],
         score_threshold=eval_cfg["score_threshold"],
         dimensions=dimensions,
         tech_stack=raw.get("tech_stack", {}),
         context=context,
+        hitl=hitl,
     )
+
+
+def load_smtp_config(project_dir: Path) -> SmtpConfig:
+    env = _load_dotenv(project_dir / ".env")
+    return SmtpConfig(
+        host=env.get("SMTP_HOST", ""),
+        port=int(env.get("SMTP_PORT", "587")),
+        user=env.get("SMTP_USER", ""),
+        password=env.get("SMTP_PASSWORD", ""),
+        use_tls=env.get("SMTP_USE_TLS", "true").lower() == "true",
+    )
+
+
+def load_imap_config(project_dir: Path) -> ImapConfig:
+    env = _load_dotenv(project_dir / ".env")
+    return ImapConfig(
+        host=env.get("IMAP_HOST", ""),
+        port=int(env.get("IMAP_PORT", "993")),
+        user=env.get("IMAP_USER", ""),
+        password=env.get("IMAP_PASSWORD", ""),
+        use_ssl=env.get("IMAP_USE_SSL", "true").lower() == "true",
+    )
+
+
+def load_role_emails(project_dir: Path) -> dict[str, str]:
+    env = _load_dotenv(project_dir / ".env")
+    return {
+        "planner": env.get("HITL_PLANNER_EMAIL", ""),
+        "generator": env.get("HITL_GENERATOR_EMAIL", ""),
+        "evaluator": env.get("HITL_EVALUATOR_EMAIL", ""),
+    }

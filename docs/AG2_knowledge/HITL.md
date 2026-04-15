@@ -275,3 +275,33 @@ Next Steps#
 Now that you understand how to implement Human in the Loop workflows, let's explore how to connect multiple agents together! Head over to Agent Orchestration to learn how to build more complex multi-agent systems that can handle sophisticated tasks through collaboration.
 
 4 hours ago
+
+---
+
+## 多角色邮件代理 HITL（2026-04-15 新增）
+
+### 架构
+
+本项目支持 3 种 HITL 模式，通过 `config/harness.yaml` 的 `hitl.mode` 切换：
+
+- `stdin`（默认）：单 UserProxyAgent，stdin 阻塞
+- `email`：3 个 EmailUserProxyAgent，通过邮件与不同负责人交互
+
+### 邮件模式角色映射
+
+| Agent | 邮件代理 | 负责人职责 |
+|-------|---------|-----------|
+| Planner | PlannerOwner | 补充需求信息、澄清模糊需求 |
+| Generator | GeneratorOwner | 审批风险操作（删除数据库、强制推送等） |
+| Evaluator | EvaluatorOwner | 确认审核决策 |
+
+### 核心实现
+
+- `agents/email_proxy.py`：`EmailUserProxyAgent` 继承 `UserProxyAgent`，重写 `a_get_human_input()`
+- 发邮件用 SMTP（smtplib），收回复用 IMAP（imaplib）
+- 邮件线程匹配：`Message-ID` / `In-Reply-To` 标准邮件头
+- 超时后返回 `[TIMEOUT]`，agent 可自行判断继续
+
+### 配置
+
+`.env` 中配置 SMTP/IMAP 凭据和各角色邮箱地址，`harness.yaml` 配置轮询间隔和超时时间。

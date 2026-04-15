@@ -12,7 +12,7 @@ from autogen.agentchat.group.llm_condition import StringLLMCondition
 from agents.planner import create_planner
 from agents.generator import create_generator
 from agents.evaluator import create_evaluator
-from agents.user import create_user
+from agents.user import create_user, create_email_user_proxies
 from infrastructure.config import ContextConfig, HarnessConfig, LlmConfig
 from infrastructure.context.auto_compact import AutoCompactTransform
 from infrastructure.context.snip import create_snip_transform
@@ -160,7 +160,7 @@ def creat_user_agent(
 ):
     agent = create_user(llm_config)
     return agent
-def setup_handoffs(agents: dict[str, ConversableAgent]) -> None:
+def setup_handoffs(agents: dict[str, ConversableAgent], hitl_mode: str = "stdin") -> None:
     """Set up swarm handoff conditions between agents.
 
     Planner -> Generator (需求拆解完毕)
@@ -170,11 +170,24 @@ def setup_handoffs(agents: dict[str, ConversableAgent]) -> None:
     Evaluator -> Generator (审核不通过)
     Evaluator -> Planner (需求不足)
     Evaluator -> TERMINATE (审核通过)
+
+    In email mode, each AI agent hands off to its dedicated role owner.
+    In stdin mode, all hand off to a single "user" proxy.
     """
     planner = agents["planner"]
     generator = agents["generator"]
     evaluator = agents["evaluator"]
-    user = agents["user"]
+
+    # Determine per-role human targets
+    if hitl_mode == "email":
+        planner_human = AgentTarget(agents["planner_owner"])
+        generator_human = AgentTarget(agents["generator_owner"])
+        evaluator_human = AgentTarget(agents["evaluator_owner"])
+    else:
+        user = agents["user"]
+        planner_human = AgentTarget(user)
+        generator_human = AgentTarget(user)
+        evaluator_human = AgentTarget(user)
 
     planner.handoffs = Handoffs()
     planner.handoffs.add_llm_conditions([
@@ -187,7 +200,7 @@ def setup_handoffs(agents: dict[str, ConversableAgent]) -> None:
             condition=StringLLMCondition("TRANSFER TO EVALUATOR,当plan撰写完成并需要将计划交接给evaluator时，用于evaluator等待generator完成后根据计划进行验证"),
         ),
         OnCondition(
-            target=AgentTarget(user),
+            target=planner_human,
             condition=StringLLMCondition(
                 "TRANSFER TO USER,当你针对某一点模糊的信息需要用户明确/补充时，这个行为需要积极触发，目前默认至少触发一次"),
         ),
@@ -204,7 +217,7 @@ def setup_handoffs(agents: dict[str, ConversableAgent]) -> None:
             condition=StringLLMCondition("TRANSFER TO PLANNER，当信息不足期望向planner询问更多信息时"),
         ),
         OnCondition(
-            target=AgentTarget(user),
+            target=generator_human,
             condition=StringLLMCondition("TRANSFER TO USER，执行风险操作时征求用户意见"),
         ),
     ]).set_after_work(StayTarget())
@@ -220,30 +233,57 @@ def setup_handoffs(agents: dict[str, ConversableAgent]) -> None:
             condition=StringLLMCondition("TRANSFER TO PLANNER"),
         ),
         OnCondition(
-            target=AgentTarget(user),
+            target=evaluator_human,
             condition=StringLLMCondition("TRANSFER TO USER，执行风险操作时征求用户意见"),
         ),
     ]).set_after_work(TerminateTarget())
-    user.handoffs = Handoffs()
-    user.handoffs.set_after_work(AgentTarget(planner))
+
+    # Human proxies return to planner after responding
+    if hitl_mode == "email":
+        for owner_key in ("planner_owner", "generator_owner", "evaluator_owner"):
+            agents[owner_key].handoffs = Handoffs()
+            agents[owner_key].handoffs.set_after_work(AgentTarget(planner))
+    else:
+        agents["user"].handoffs = Handoffs()
+        agents["user"].handoffs.set_after_work(AgentTarget(planner))
 def create_all_agents(
     llm_config: LlmConfig,
     mcp_manager: McpManager,
     skill_registry: SkillRegistry | None = None,
     harness_config: HarnessConfig | None = None,
+    smtp_config=None,
+    imap_config=None,
+    role_emails: dict[str, str] | None = None,
 ) -> dict[str, ConversableAgent]:
-    """Create all three agents with their tools, skills, and handoffs."""
-    agents = {
+    """Create all agents with their tools, skills, and handoffs.
+
+    In email HITL mode, creates 3 role-specific EmailUserProxyAgent instances.
+    In stdin mode, creates a single UserProxyAgent.
+    """
+    hitl_mode = harness_config.hitl.mode if harness_config else "stdin"
+
+    agents: dict[str, ConversableAgent] = {
         "planner": create_planner_agent(llm_config, mcp_manager, skill_registry),
         "generator": create_generator_agent(llm_config, mcp_manager, skill_registry),
         "evaluator": create_evaluator_agent(llm_config, mcp_manager, skill_registry),
-        "user":creat_user_agent(llm_config, ),
     }
 
-    # Register context compression transforms (Level 1 + Level 4)
-    if harness_config and harness_config.context.enabled:
-        for agent in agents.values():
-            _register_context_transforms(agent, harness_config.context)
+    # HITL proxies
+    if hitl_mode == "email" and smtp_config and imap_config and role_emails:
+        email_proxies = create_email_user_proxies(
+            smtp_config, imap_config, harness_config.hitl, role_emails,
+        )
+        agents.update(email_proxies)
+        logger.info("Created %d email proxy agents", len(email_proxies))
+    else:
+        agents["user"] = creat_user_agent(llm_config)
 
-    setup_handoffs(agents)
+    # Register context compression transforms (Level 1 + Level 4)
+    # Only for AI agents, not for email proxies
+    _ai_agent_keys = {"planner", "generator", "evaluator"}
+    if harness_config and harness_config.context.enabled:
+        for key in _ai_agent_keys:
+            _register_context_transforms(agents[key], harness_config.context)
+
+    setup_handoffs(agents, hitl_mode)
     return agents

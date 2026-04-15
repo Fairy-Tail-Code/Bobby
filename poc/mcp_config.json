@@ -1,0 +1,10 @@
+{
+  "mcpServers": {
+    "handoff": {
+      "command": "C:\\Users\\WUJIEAI\\miniconda3\\envs\\OpenHarness\\python.exe",
+      "args": [
+        "C:\\Users\\WUJIEAI\\PycharmProjects\\OpenHarness\\AG2_openharness\\poc\\handoff_server.py"
+      ]
+    }
+  }
+}

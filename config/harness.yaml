@@ -1,6 +1,6 @@
 harness:
   evaluation:
-    max_rounds: 100
+    max_rounds: 150
     score_threshold: 7
     dimensions:
       - name: design_quality
@@ -30,3 +30,9 @@ harness:
     # Level 4: Auto Compact — LLM summarization when approaching token limit
     max_tokens: 200000
     auto_compact_enabled: true
+
+  hitl:
+    mode: email              # "email" or "stdin"
+    polling_interval: 30     # seconds between IMAP checks
+    timeout: 3600            # max seconds to wait for a reply
+    subject_prefix: "[OpenHarness]"

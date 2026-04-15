@@ -8,6 +8,7 @@ Safety layers:
 """
 from __future__ import annotations
 
+import asyncio
 import re
 import subprocess
 import os
@@ -200,7 +201,7 @@ def build_shell_server() -> FastMCP:
         openWorldHint=True,
     ),
 )
-def run_command(
+async def run_command(
     cmd: str,
     cwd: str | None = None,
     env: dict[str, str] | None = None,
@@ -224,7 +225,8 @@ def run_command(
         }
 
     try:
-        completed_process = subprocess.run(
+        completed_process = await asyncio.to_thread(
+            subprocess.run,
             cmd,
             cwd=_resolve_cwd(cwd),
             env=_build_command_env(env),
@@ -269,7 +271,7 @@ def run_command(
         openWorldHint=True,
     ),
 )
-def start_command(
+async def start_command(
     cmd: str,
     cwd: str | None = None,
     env: dict[str, str] | None = None,
@@ -288,7 +290,8 @@ def start_command(
             "error": f"Command blocked: {rejection}",
         }
 
-    process = subprocess.Popen(
+    process = await asyncio.to_thread(
+        subprocess.Popen,
         cmd,
         cwd=_resolve_cwd(cwd),
         env=_build_command_env(env),
@@ -348,13 +351,13 @@ def read_command_output(
         openWorldHint=True,
     ),
 )
-def write_stdin(session_id: str, chars: str) -> dict[str, Any]:
+async def write_stdin(session_id: str, chars: str) -> dict[str, Any]:
     """Write characters to one running command session stdin."""
     session = _get_required_session(session_id)
     if session.process.stdin is None:
         raise ValueError(f"Session '{session_id}' does not accept stdin.")
-    session.process.stdin.write(chars)
-    session.process.stdin.flush()
+    await asyncio.to_thread(session.process.stdin.write, chars)
+    await asyncio.to_thread(session.process.stdin.flush)
     return {
         "ok": True,
         "session_id": session_id,
@@ -370,16 +373,16 @@ def write_stdin(session_id: str, chars: str) -> dict[str, Any]:
         openWorldHint=True,
     ),
 )
-def terminate_command(session_id: str) -> dict[str, Any]:
+async def terminate_command(session_id: str) -> dict[str, Any]:
     """Terminate one background command and return its last known state."""
     session = _get_required_session(session_id)
     if session.process.poll() is None:
         session.process.terminate()
         try:
-            session.process.wait(timeout=5.0)
+            await asyncio.to_thread(session.process.wait, timeout=5.0)
         except subprocess.TimeoutExpired:
             session.process.kill()
-            session.process.wait(timeout=5.0)
+            await asyncio.to_thread(session.process.wait, timeout=5.0)
     return {
         "ok": True,
         "session_id": session_id,

@@ -6,7 +6,7 @@ import logging
 import sys
 from pathlib import Path
 
-from infrastructure.config import load_llm_config, load_mcp_config, load_harness_config
+from infrastructure.config import load_llm_config, load_mcp_config, load_harness_config, load_smtp_config, load_imap_config, load_role_emails
 from infrastructure.mcp.manager import McpManager
 from infrastructure.skills.registry import SkillRegistry
 from agents.factory import create_all_agents, SKILLS_DIR
@@ -58,15 +58,34 @@ async def run(prompt: str) -> None:
             )
 
     try:
+        # Load HITL email config (if email mode)
+        smtp_config = None
+        imap_config = None
+        role_emails = None
+        if harness_config.hitl.mode == "email":
+            smtp_config = load_smtp_config(PROJECT_DIR)
+            imap_config = load_imap_config(PROJECT_DIR)
+            role_emails = load_role_emails(PROJECT_DIR)
+            logger.info("HITL mode: email (SMTP=%s)", smtp_config.host)
+
         # Create agents with skills and handoffs
         logger.info("Creating agents with skills and swarm handoffs...")
-        agents_dict = create_all_agents(llm_config, mcp_manager, skill_registry, harness_config)
+        agents_dict = create_all_agents(
+            llm_config, mcp_manager, skill_registry, harness_config,
+            smtp_config=smtp_config,
+            imap_config=imap_config,
+            role_emails=role_emails,
+        )
+
+        # Build agent list: AI agents + whichever human proxies exist
         agents_list = [
             agents_dict["planner"],
             agents_dict["generator"],
             agents_dict["evaluator"],
-            agents_dict["user"],
         ]
+        for key in ("user", "planner_owner", "generator_owner", "evaluator_owner"):
+            if key in agents_dict:
+                agents_list.append(agents_dict[key])
 
         # Run swarm chat
         logger.info(
