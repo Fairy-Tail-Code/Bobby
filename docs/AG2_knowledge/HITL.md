@@ -282,9 +282,9 @@ Now that you understand how to implement Human in the Loop workflows, let's expl
 
 ### 架构
 
-本项目支持 3 种 HITL 模式，通过 `config/harness.yaml` 的 `hitl.mode` 切换：
+本项目支持 2 种 HITL 模式，通过 `config/harness.yaml` 的 `hitl.mode` 切换：
 
-- `stdin`（默认）：单 UserProxyAgent，stdin 阻塞
+- `stdin`：单 UserProxyAgent，stdin 阻塞（向后兼容）
 - `email`：3 个 EmailUserProxyAgent，通过邮件与不同负责人交互
 
 ### 邮件模式角色映射
@@ -295,13 +295,51 @@ Now that you understand how to implement Human in the Loop workflows, let's expl
 | Generator | GeneratorOwner | 审批风险操作（删除数据库、强制推送等） |
 | Evaluator | EvaluatorOwner | 确认审核决策 |
 
+### 邮件架构
+
+**1 个系统邮箱 + 3 个收件人**：系统邮箱（SMTP/IMAP）发邮件给 3 个角色的负责人，负责人直接回复，系统轮询 IMAP 收回复。只需要 1 个 SMTP/IMAP 授权码。
+
 ### 核心实现
 
 - `agents/email_proxy.py`：`EmailUserProxyAgent` 继承 `UserProxyAgent`，重写 `a_get_human_input()`
 - 发邮件用 SMTP（smtplib），收回复用 IMAP（imaplib）
-- 邮件线程匹配：`Message-ID` / `In-Reply-To` 标准邮件头
 - 超时后返回 `[TIMEOUT]`，agent 可自行判断继续
+
+### 踩坑记录
+
+#### 1. a_get_human_input 的 prompt 参数不是对话内容
+
+`a_get_human_input(prompt)` 的 `prompt` 是 AG2 自动生成的 stdin 提示词（如 `"Replying as planner_owner. Provide feedback to chat_manager..."`），不是上一位 agent 的实际发言。
+
+**解决**：从 `self._oai_messages` 中提取最后一条非本 agent 的消息作为真实上下文：
+```python
+def _get_last_agent_message(self) -> str:
+    for msg in reversed(all_messages):
+        if msg.get("name") != self.name:
+            return f"[{msg['name']}]:\n{msg['content']}"
+```
+
+#### 2. QQ 邮箱 SMTP 会替换 Message-ID
+
+我们发出的邮件带自定义 `Message-ID`，但 QQ 邮箱 SMTP 会替换为自己的 ID。用户回复时 `In-Reply-To` 指向 QQ 改后的 ID，与我们的原始 ID 不匹配，导致回复永远匹配不上。
+
+**解决**：放弃 Message-ID / In-Reply-To 匹配，改为**在邮件主题中嵌入唯一 request_id**（如 `[OpenHarness] [harness_a1b2c3d4] planner_owner needs input`），轮询时通过主题匹配回复。
+
+#### 3. IMAP HEADER 搜索兼容性
+
+QQ 邮箱 IMAP 不支持 `HEADER "In-Reply-To" "..."` 搜索条件，会静默返回所有邮件，导致匹配到历史未读邮件。
+
+**解决**：IMAP 只用 `UNSEEN` 搜索（所有邮箱都支持），拿到邮件后在 Python 里手动验证主题是否包含目标 request_id。
+
+#### 4. IMAP fetch 响应结构
+
+`imap_conn.uid("fetch", uid, "(BODY[HEADER.FIELDS (SUBJECT)])")` 返回的 `header_data[0]` 可能是 `tuple` 或 `bytes`，取决于 IMAP 服务器实现。需要做类型判断：
+```python
+raw = header_data[0]
+header_bytes = raw[1] if isinstance(raw, tuple) else raw
+```
 
 ### 配置
 
-`.env` 中配置 SMTP/IMAP 凭据和各角色邮箱地址，`harness.yaml` 配置轮询间隔和超时时间。
+- `.env`：SMTP/IMAP 凭据 + 3 个角色邮箱地址（`HITL_PLANNER_EMAIL` 等）
+- `harness.yaml`：`hitl` 段配置 `mode`、`polling_interval`、`timeout`、`subject_prefix`

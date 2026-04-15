@@ -233,6 +233,7 @@ async def run_command(
             shell=True,
             text=True,
             capture_output=True,
+            stdin=subprocess.DEVNULL,  # 防止子进程继承 MCP stdin 管道导致死锁
             timeout=timeout_ms / 1000.0,
         )
     except subprocess.TimeoutExpired:

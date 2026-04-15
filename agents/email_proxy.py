@@ -15,6 +15,7 @@ import uuid
 from email.mime.text import MIMEText
 from email.mime.multipart import MIMEMultipart
 from email.utils import make_msgid, parseaddr
+import re
 
 from autogen import UserProxyAgent
 
@@ -96,30 +97,55 @@ class EmailUserProxyAgent(UserProxyAgent):
             reply = self._check_for_reply(request_id)
             if reply is not None:
                 logger.info("Reply received from %s (%s)", self._recipient, self.name)
+                logger.info(f"Get Reply ：{reply}")
                 return reply
             await asyncio.sleep(self._polling_interval)
 
         logger.warning("Timeout waiting for reply from %s (%s)", self._recipient, self.name)
         return "[TIMEOUT] 未在规定时间内收到回复，请agent自行判断继续执行。"
 
-    def _get_last_agent_message(self) -> str:
-        """从 agent 消息历史中提取上一条 AI agent 发来的实际内容（非 stdin 提示词）。"""
-        # self._oai_messages 是 dict[ConversableAgent, list[dict]]
-        # 每条消息有 'content', 'name', 'role' 等字段
-        all_messages: list[dict] = []
-        for msg_list in self._oai_messages.values():
-            all_messages.extend(msg_list)
+    def _get_last_agent_message(self) -> str | None:
+        """从GroupChat历史里找最后一条真正有意义的agent消息"""
 
-        # 倒序查找第一条不是本 agent 发的消息
-        for msg in reversed(all_messages):
-            sender = msg.get("name", "")
-            if sender and sender != self.name:
-                content = msg.get("content", "")
-                if content:
-                    return f"[{sender}]:\n{content}"
+        # 需要过滤掉的模式
+        SKIP_PATTERNS = [
+            r"^Transfer to \w+",
+            r"^TERMINATE",
+            r"^APPROVED",
+            r"^REJECTED",
+            r"^\s*$",  # 空消息
+        ]
 
-        return "(无法获取对话内容，请根据上下文判断)"
+        if hasattr(self, "_groupchat") and self._groupchat:
+            messages = self._groupchat.messages
+        else:
+            messages = []
+            for msgs in self.chat_messages.values():
+                messages.extend(msgs)
 
+        for msg in reversed(messages):
+            # 跳过自己发的
+            if msg.get("name") == self.name:
+                continue
+
+            content = msg.get("content") or ""
+
+            # 跳过None或空
+            if not content.strip():
+                continue
+
+            # 跳过控制消息
+            if any(re.search(p, content.strip(), re.IGNORECASE) for p in SKIP_PATTERNS):
+                continue
+
+            # 跳过纯工具调用结果（AG2里tool message）
+            if msg.get("role") == "tool":
+                continue
+
+            sender = msg.get("name", "agent")
+            return f"[{sender}]:\n{content}"
+
+        return None
     # ------------------------------------------------------------------
     # Email formatting
     # ------------------------------------------------------------------

@@ -77,3 +77,46 @@
 - `agents/factory.py` — 改用 SkillRegistry，注入摘要替代全量指令，注册 load_skill tool
 - `main.py` — 改用 SkillRegistry，增加对齐校验逻辑
 - `tests/test_skill_loader.py` — 重写为 SkillRegistry 测试（10 个用例全通过）
+
+## 2026-04-15
+
+### 架构决策
+
+#### 多角色邮件 HITL（Human-in-the-Loop）
+
+- **背景**：原系统只有 1 个 stdin UserProxyAgent，无法支持多人协作。需要让不同角色的负责人通过邮件参与 agent 工作流。
+- **方案**：3 个 `EmailUserProxyAgent` 替代 1 个 `UserProxyAgent`，每个角色对应一个邮箱收件人，通过 SMTP 发邮件、IMAP 轮询收回复。
+- **设计选择**：
+  - 用 1 个系统邮箱（非 3 个独立邮箱），3 个角色只是收件人地址
+  - 邮件匹配通过主题中的唯一 request_id（非 In-Reply-To），因为 QQ 等邮箱 SMTP 会替换 Message-ID
+  - 支持 `hitl.mode: email|stdin` 切换，完全向后兼容
+- **角色划分**：
+  - PlannerOwner：补充需求信息、澄清模糊需求
+  - GeneratorOwner：审批风险操作（删除数据库、force push 等）
+  - EvaluatorOwner：确认审核决策
+
+#### MCP subprocess stdin 死锁修复
+
+- **问题**：`shell_server` 的 `subprocess.run()` 未设 `stdin=subprocess.DEVNULL`，子进程继承 MCP stdio 管道导致死锁，所有 shell 命令 180 秒超时
+- **修复**：`shell_server.py`、`docker_server.py` 的所有 `subprocess.run()` 加 `stdin=subprocess.DEVNULL`
+- **根因**：MCP stdio 传输下，子进程继承 stdin 管道，占用 MCP 通信通道
+
+#### Agent 提示词更新
+
+- Generator 和 Evaluator 的提示词从"3-agent swarm"更新为"multi-agent swarm with human-in-the-loop"
+- 新增 `transfer-to-User` 的 Handoff Rules 说明，让 LLM 知道何时可以向对应负责人求助
+
+### 文件变更清单
+
+- `agents/email_proxy.py` — **新建**，EmailUserProxyAgent 类（SMTP 发送 + IMAP 轮询 + 主题 request_id 匹配）
+- `agents/user.py` — 新增 `create_email_user_proxies()`，保留 stdin fallback
+- `agents/factory.py` — `create_all_agents()` 支持 email 模式，`setup_handoffs()` 支持按角色路由
+- `agents/prompts/planner.md` — Team Structure 新增 PlannerOwner，Handoff Rules 更新
+- `agents/prompts/generator.md` — Team Structure 新增 GeneratorOwner，Handoff Rules 新增 transfer-to-User
+- `agents/prompts/evaluator.md` — Team Structure 新增 EvaluatorOwner，Handoff Rules 新增 transfer-to-User
+- `infrastructure/config.py` — 新增 SmtpConfig、ImapConfig、HitlConfig 数据类和加载器
+- `infrastructure/mcp_servers/shell_server.py` — 修复 subprocess stdin 死锁
+- `infrastructure/mcp_servers/docker_server.py` — 修复 subprocess stdin 死锁
+- `config/harness.yaml` — 新增 `hitl` 配置段
+- `.env` — 新增 SMTP/IMAP 凭据和 3 个角色邮箱
+- `main.py` — 加载邮件配置，动态构建 agents_list

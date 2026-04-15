@@ -92,6 +92,39 @@ Do NOT write transfer phrases as plain text.
 
 ## 其他 MCP Server 的坑
 
+### 通用：subprocess 继承 MCP stdin 管道导致死锁（2026-04-15 补充）
+
+**影响范围**：所有使用 `subprocess.run()` 的 MCP server（shell_server、docker_server、git_server 等）
+
+**根因**：MCP 使用 stdio 传输（stdin/stdout 管道通信）。`subprocess.run()` 默认不设 `stdin` 参数时，子进程**继承父进程的 stdin**，即 MCP 的通信管道。子进程占用管道后：
+- MCP 客户端写请求 → 管道被子进程占用 → MCP server 读不到请求
+- 或者子进程从管道读取了 MCP 协议字节 → MCP server 收到残缺消息
+- 最终 MCP 客户端等不到响应 → 180 秒超时
+
+**现象**：
+```
+>>>>>>>> EXECUTING FUNCTION run_command...
+Input arguments: {'cmd': 'pip show fastapi starlette'}
+...（卡 180 秒）
+ERROR: MCP tool 'shell/run_command' timed out after 180s.
+```
+
+**修复**：所有 `subprocess.run()` 必须加 `stdin=subprocess.DEVNULL`：
+```python
+# 错误 ❌
+subprocess.run(cmd, shell=True, capture_output=True, text=True)
+
+# 正确 ✅
+subprocess.run(cmd, shell=True, capture_output=True, text=True, stdin=subprocess.DEVNULL)
+```
+
+**已修复的文件**：
+- `infrastructure/mcp_servers/shell_server.py` — `run_command` 工具
+- `infrastructure/mcp_servers/docker_server.py` — `_run_command` 辅助函数
+- `infrastructure/mcp_servers/git_server.py` — 之前已修复
+
+**排查方法**：如果 MCP 工具调用超时，首先检查该 server 的 `subprocess.run` 是否缺少 `stdin=subprocess.DEVNULL`。
+
 ### browser_server.py：Sync API 与 asyncio 冲突
 
 FastMCP 的 stdio transport 在 asyncio 事件循环中运行。Playwright Sync API 内部也启动自己的事件循环，两者冲突。

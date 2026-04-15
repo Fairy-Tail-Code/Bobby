@@ -333,6 +333,7 @@ def _run_command(command: list[str], cwd: Path | None = None) -> subprocess.Comp
         cwd=cwd,
         text=True,
         capture_output=True,
+        stdin=subprocess.DEVNULL,
     )
     if completed_process.returncode != 0:
         error_text = completed_process.stderr.strip() or completed_process.stdout.strip()
