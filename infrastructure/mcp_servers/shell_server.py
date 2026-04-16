@@ -131,6 +131,50 @@ _BLOCKED_PATTERNS: list[tuple[re.Pattern[str], str]] = [
     ),
 ]
 
+# Long-running server patterns — only enforced in run_command (not start_command).
+_LONG_RUNNING_PATTERNS: list[tuple[re.Pattern[str], str]] = [
+    (
+        re.compile(r"\buvicorn\b"),
+        "uvicorn is a long-running server. Use `start_command` instead, then `read_command_output` to check logs.",
+    ),
+    (
+        re.compile(r"\bgunicorn\b"),
+        "gunicorn is a long-running server. Use `start_command` instead, then `read_command_output` to check logs.",
+    ),
+    (
+        re.compile(r"\bpython\s+-m\s+http\.server\b"),
+        "http.server is a long-running server. Use `start_command` instead, then `read_command_output` to check logs.",
+    ),
+    (
+        re.compile(r"\b(node|npx|npm)\s+(start|serve|dev|run\s+dev)\b"),
+        "This starts a long-running dev server. Use `start_command` instead, then `read_command_output` to check logs.",
+    ),
+    (
+        re.compile(r"\bflask\s+run\b"),
+        "Flask dev server is long-running. Use `start_command` instead, then `read_command_output` to check logs.",
+    ),
+    (
+        re.compile(r"\bjava\s+.*-jar\b.*\b\.jar\b"),
+        "Java server is long-running. Use `start_command` instead, then `read_command_output` to check logs.",
+    ),
+    (
+        re.compile(r"\bdocker\s+run\b(?!.*--rm\b)"),
+        "Docker run without --rm is long-running. Use `start_command` instead, then `read_command_output` to check logs.",
+    ),
+    (
+        re.compile(r"\bcelery\s+-\w+\s+worker\b"),
+        "Celery worker is long-running. Use `start_command` instead, then `read_command_output` to check logs.",
+    ),
+    (
+        re.compile(r"\bredis-server\b"),
+        "Redis server is long-running. Use `start_command` instead, then `read_command_output` to check logs.",
+    ),
+    (
+        re.compile(r"\bnginx\b"),
+        "Nginx is long-running. Use `start_command` instead, then `read_command_output` to check logs.",
+    ),
+]
+
 # Write-like command patterns that modify filesystem
 _WRITE_PATTERNS: list[re.Pattern[str]] = [
     re.compile(r"\b(git\s+push|git\s+reset\s+--hard|git\s+clean)\b", re.IGNORECASE),
@@ -145,6 +189,14 @@ def _validate_command(cmd: str) -> str | None:
     return None
 
 
+def _validate_short_lived(cmd: str) -> str | None:
+    """Extra checks for run_command: reject long-running servers."""
+    for pattern, reason in _LONG_RUNNING_PATTERNS:
+        if pattern.search(cmd):
+            return reason
+    return None
+
+
 # ---------------------------------------------------------------------------
 # Safety: output truncation
 # ---------------------------------------------------------------------------
@@ -152,8 +204,10 @@ def _validate_command(cmd: str) -> str | None:
 _MAX_OUTPUT_CHARS = 50_000
 
 
-def _truncate(text: str, limit: int = _MAX_OUTPUT_CHARS) -> str:
+def _truncate(text: str | None, limit: int = _MAX_OUTPUT_CHARS) -> str:
     """Keep head + tail of output, inject a truncation notice in the middle."""
+    if text is None:
+        return ""
     if len(text) <= limit:
         return text
     head = int(limit * 0.7)
@@ -194,7 +248,10 @@ def build_shell_server() -> FastMCP:
 # ---------------------------------------------------------------------------
 
 @shell_server.tool(
-    description="Run one shell command and wait for completion.",
+    description=(
+        "Run one short-lived shell command and wait for completion. "
+        "For long-running processes (servers, watchers), use `start_command` instead."
+    ),
     annotations=ToolAnnotations(
         readOnlyHint=False,
         destructiveHint=True,
@@ -214,6 +271,17 @@ async def run_command(
         raise ValueError("Tool 'run_command' field 'timeout_ms' must be a positive integer.")
 
     rejection = _validate_command(cmd)
+    if rejection:
+        return {
+            "ok": False,
+            "cmd": cmd,
+            "cwd": str(_resolve_cwd(cwd)),
+            "stdout": "",
+            "stderr": f"Command blocked: {rejection}",
+            "exit_code": -1,
+        }
+
+    rejection = _validate_short_lived(cmd)
     if rejection:
         return {
             "ok": False,
@@ -265,7 +333,12 @@ async def run_command(
 
 
 @shell_server.tool(
-    description="Start one background shell command and return a session id.",
+    description=(
+        "Start one long-running shell command in the background and return a session id. "
+        "Use this for servers (uvicorn, flask, npm start, etc.), watchers, and any process "
+        "that does not exit on its own. Use `read_command_output` to read logs, "
+        "`terminate_command` to stop it."
+    ),
     annotations=ToolAnnotations(
         readOnlyHint=False,
         destructiveHint=True,

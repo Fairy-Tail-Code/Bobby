@@ -1,6 +1,6 @@
 harness:
   evaluation:
-    max_rounds: 150
+    max_rounds: 500
     score_threshold: 7
     dimensions:
       - name: design_quality
@@ -25,7 +25,7 @@ harness:
   context:
     enabled: true
     # Level 1: Snip Compact — keep only the most recent messages
-    max_messages: 100
+    max_messages: 500
     keep_first_message: true
     # Level 4: Auto Compact — LLM summarization when approaching token limit
     max_tokens: 200000
@@ -41,3 +41,5 @@ harness:
     agent: claude             # acpx agent: claude / codex / gemini
     default_timeout: 600      # 单次任务超时（秒）
     max_sessions: 3           # 最大并行会话数
+  session:
+    session_dir: session/

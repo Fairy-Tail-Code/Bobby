@@ -2,8 +2,11 @@
 from __future__ import annotations
 
 import asyncio
+import json
 import logging
+import os
 import sys
+from datetime import datetime
 from pathlib import Path
 
 from infrastructure.config import load_llm_config, load_mcp_config, load_harness_config, load_smtp_config, load_imap_config, load_role_emails
@@ -11,6 +14,7 @@ from infrastructure.mcp.manager import McpManager
 from infrastructure.skills.registry import SkillRegistry
 from agents.factory import create_all_agents, SKILLS_DIR
 from orchestration.group import arun_swarm
+from utils.yaml_reader import read_yaml
 
 logging.basicConfig(
     level=logging.INFO,
@@ -21,22 +25,30 @@ logger = logging.getLogger(__name__)
 PROJECT_DIR = Path(__file__).parent
 CONFIG_DIR = PROJECT_DIR / "config"
 
+# 获取session_file
+config = read_yaml("config/harness.yaml")
+session_dir = config.get("harness", {}).get("session", {}).get("session_dir", "session")
+timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
+session_file = os.path.join(session_dir, f"chat_history_{timestamp}.json")
+
 
 async def run(prompt: str) -> None:
-    """Run the harness with the given user prompt."""
-    # Load configuration
+    """运行测试工具，传入用户提示词启动完整流程"""
+    # 加载配置：从环境变量加载大模型配置
     logger.info("Loading LLM config from .env")
     llm_config = load_llm_config(PROJECT_DIR)
+
+    # 加载 MCP 服务配置和测试工具配置
     logger.info("Loading MCP and harness config from %s", CONFIG_DIR)
     mcp_config = load_mcp_config(CONFIG_DIR)
     harness_config = load_harness_config(CONFIG_DIR)
 
-    # Initialize skill registry
+    # 初始化技能注册器，扫描技能目录
     skill_registry = SkillRegistry(roots=[SKILLS_DIR])
     available_skills = skill_registry.list_skills()
     logger.info("Available skills: %s", [s.name for s in available_skills])
 
-    # Connect to MCP servers
+    # 连接所有配置的 MCP 服务器（用于工具调用/外部服务）
     logger.info("Connecting to MCP servers...")
     mcp_manager = McpManager()
     connected_servers: list[str] = []
@@ -47,7 +59,7 @@ async def run(prompt: str) -> None:
         except Exception as e:
             logger.error("Failed to connect to MCP server '%s': %s", server_cfg.name, e)
 
-    # Validate skill-MCP alignment
+    # 校验技能与 MCP 服务的匹配性：技能需要的服务是否已连接
     skill_registry.connected_servers = connected_servers
     alignment_issues = skill_registry.validate_alignment()
     if alignment_issues:
@@ -58,7 +70,7 @@ async def run(prompt: str) -> None:
             )
 
     try:
-        # Load HITL email config (if email mode)
+        # 如果开启邮件模式的人工介入（HITL），加载邮件相关配置
         smtp_config = None
         imap_config = None
         role_emails = None
@@ -68,8 +80,9 @@ async def run(prompt: str) -> None:
             role_emails = load_role_emails(PROJECT_DIR)
             logger.info("HITL mode: email (SMTP=%s)", smtp_config.host)
 
-        # Create agents with skills and handoffs
+        # 创建所有智能体：包含技能、转接逻辑、人工代理（如需）
         logger.info("Creating agents with skills and swarm handoffs...")
+
         agents_dict = create_all_agents(
             llm_config, mcp_manager, skill_registry, harness_config,
             smtp_config=smtp_config,
@@ -77,31 +90,44 @@ async def run(prompt: str) -> None:
             role_emails=role_emails,
         )
 
-        # Build agent list: AI agents + whichever human proxies exist
+        # 构建智能体列表：核心 AI 智能体 + 可选的人工代理
+        # todo 这部分最好整合到一个config而不是这里写死。
         agents_list = [
-            agents_dict["planner"],
-            agents_dict["generator"],
-            agents_dict["evaluator"],
+            agents_dict["planner"],  # 规划器
+            agents_dict["generator"],  # 生成器
+            agents_dict["evaluator"],  # 评估器
         ]
+        # 如果存在人工代理，追加到智能体列表
         for key in ("user", "planner_owner", "generator_owner", "evaluator_owner"):
             if key in agents_dict:
                 agents_list.append(agents_dict[key])
 
-        # Run swarm chat
+        # 启动多智能体群聊（Swarm），设置初始发言智能体、最大轮数等
         logger.info(
             "Starting swarm chat (max %d rounds) with prompt: %s",
             harness_config.max_rounds,
-            prompt[:100],
+            prompt[:100],  # 只打印前100字符避免日志过长
         )
+        # arun_swarm开始循环
         chat_result, context, last_speaker = await arun_swarm(
-            initial_agent=agents_dict["planner"],
-            agents=agents_list,
-            prompt=prompt,
-            harness_config=harness_config,
+            initial_agent=agents_dict["planner"],  # 从规划器开始
+            agents=agents_list,  # 参与群聊的所有智能体
+            prompt=prompt,  # 用户输入提示词
+            harness_config=harness_config,  # 配置
+
         )
+        # 保存session
+        with open(session_file, "w", encoding="utf-8") as f:
+            json.dump(chat_result.chat_history, f, ensure_ascii=False, indent=2)
+
+        logger.info("Session saved.")
+
+        # 群聊执行完成，输出最后发言智能体
+
+        # todo 加入session resume功能
         logger.info("Swarm completed. Last speaker: %s", last_speaker.name)
     finally:
-        # Cleanup
+        # 无论是否异常，最终都断开 MCP 服务，释放资源
         logger.info("Disconnecting MCP servers...")
         await mcp_manager.disconnect_all()
 

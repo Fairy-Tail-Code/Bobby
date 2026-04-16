@@ -1,0 +1,4 @@
+interface:
+  display_name: "Agent Browser Test From Repo Testcase"
+  short_description: "Run repo testcase files with agent-browser"
+  default_prompt: "Use $agent-browser-test-from-prd to read a specified code repo path, load existing cases from the repo's fixed testcase directory, read a specified auth file, auto-generate an isolated session unless the user explicitly asks for reuse, wait for human OTP input when needed, and run the existing regression suite against the target URL with agent-browser."

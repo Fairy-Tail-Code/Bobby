@@ -1,0 +1,13 @@
+{
+  "login_url": null,
+  "login_type": "email_otp",
+  "email": "tester@example.com",
+  "username": null,
+  "password": null,
+  "phone": null,
+  "state_file": "./your-site-auth-state.json",
+  "session_name": "your-site-e2e",
+  "profile": null,
+  "otp_mode": "human",
+  "notes": "login_url is optional. If null, agent opens the target site and auto-detects the login entry. For OTP login, agent triggers code delivery, then waits for user input."
+}

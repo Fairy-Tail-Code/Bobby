@@ -1,17 +1,16 @@
-"""Level 4: Auto Compact — LLM-based conversation summarization.
+"""
+第四层：自动压缩 — 基于大模型的对话总结。
 
-Uses AG2's built-in ``_reflection_with_llm`` to generate a summary when the
-accumulated conversation exceeds a token threshold, then replaces old messages
-with the summary while preserving recent context.
+当累计对话超过token阈值时，使用 AG2 内置的 _reflection_with_llm 生成摘要，
+用摘要替换早期消息，同时保留最近上下文。
 
-This is a ``MessageTransform`` compatible class — add it via ``TransformMessages``
-so it hooks into ``process_all_messages_before_reply`` automatically.
+本类符合 AG2 MessageTransform 规范 — 通过 TransformMessages 添加后，
+会自动挂载到 process_all_messages_before_reply 流程中。
 """
 from __future__ import annotations
 
 import copy
 import logging
-import warnings
 from typing import Any
 
 import tiktoken
@@ -19,7 +18,7 @@ import tiktoken
 logger = logging.getLogger(__name__)
 
 # ---------------------------------------------------------------------------
-# Default summary prompt (adapted from Claude Code's compact prompt)
+# 默认总结提示词
 # ---------------------------------------------------------------------------
 DEFAULT_SUMMARY_PROMPT = """\
 Summarize the multi-agent conversation below. The conversation involves \
@@ -42,31 +41,29 @@ Be thorough and specific. This summary will replace the original context, \
 so include every detail needed to continue the work seamlessly.
 """
 
-# Token overhead buffer — we summarize *before* hitting the hard limit
-# so the model still has room to respond.
+# 总结预留token空间，确保模型仍有足够token生成回复
 _SUMMARY_OUTPUT_BUDGET = 4_000
-_KEEP_RECENT_MESSAGES = 6  # always keep the last N messages verbatim
-
+# 始终保留最近 N 条消息原文不压缩
+_KEEP_RECENT_MESSAGES = 6
 
 # ---------------------------------------------------------------------------
-# Token helpers
+# token统计工具
 # ---------------------------------------------------------------------------
 
+# GPT-3.5/4 通用编码
 _ENCODER = tiktoken.get_encoding("cl100k_base")
 
-
 def _count_tokens(text: str) -> int:
-    """Count tokens in a string using cl100k_base encoding."""
+    """使用 cl100k_base 统计文本token数"""
     if not text:
         return 0
     return len(_ENCODER.encode(text))
 
-
 def _estimate_message_tokens(msg: dict[str, Any]) -> int:
-    """Rough token count for a single message dict."""
+    """估算单条消息的token数（含格式开销）"""
     content = msg.get("content")
     if isinstance(content, str):
-        return _count_tokens(content) + 4  # role + formatting overhead
+        return _count_tokens(content) + 4
     if isinstance(content, list):
         total = 0
         for item in content:
@@ -74,36 +71,35 @@ def _estimate_message_tokens(msg: dict[str, Any]) -> int:
                 if item.get("type") == "text":
                     total += _count_tokens(item.get("text", ""))
                 else:
-                    total += 10  # non-text blocks (images, tool calls…)
+                    total += 10
             elif isinstance(item, str):
                 total += _count_tokens(item)
         return total + 4
     return 4
 
-
 def _estimate_total_tokens(messages: list[dict[str, Any]]) -> int:
+    """计算整个消息列表的总token数"""
     return sum(_estimate_message_tokens(m) for m in messages)
 
-
 # ---------------------------------------------------------------------------
-# AutoCompactTransform
+# 自动压缩转换器
 # ---------------------------------------------------------------------------
 
 class AutoCompactTransform:
-    """AG2 ``MessageTransform`` that summarizes old messages via LLM.
+    """
+    AG2 MessageTransform：基于 LLM 自动总结压缩历史消息。
 
-    Usage::
-
+    用法：
         from autogen.agentchat.contrib.capabilities import TransformMessages
 
-        auto_compact = AutoCompactTransform(agent=my_agent, max_tokens=80_000)
+        auto_compact = AutoCompactTransform(agent=my_agent, max_tokens=80000)
         TransformMessages(transforms=[auto_compact]).add_to_agent(my_agent)
     """
 
     def __init__(
         self,
         agent: Any,
-        max_tokens: int = 80_000,
+        max_tokens: int = 80000,
         summary_prompt: str | None = None,
         keep_recent: int = _KEEP_RECENT_MESSAGES,
     ) -> None:
@@ -114,10 +110,8 @@ class AutoCompactTransform:
         self._cached_summary: str | None = None
         self._last_summarized_count: int = 0
 
-    # -- MessageTransform protocol ----------------------------------------
-
     def apply_transform(self, messages: list[dict[str, Any]]) -> list[dict[str, Any]]:
-        """Check token budget; if exceeded, summarize and compress."""
+        """执行消息转换：超token则压缩，否则直接返回"""
         total_tokens = _estimate_total_tokens(messages)
         threshold = self._max_tokens - _SUMMARY_OUTPUT_BUDGET
 
@@ -125,81 +119,69 @@ class AutoCompactTransform:
             return messages
 
         logger.info(
-            "AutoCompact triggered: %d tokens >= %d threshold. Summarizing…",
-            total_tokens, threshold,
+            "AutoCompact 触发：%d token ≥ %d 阈值，开始总结...",
+            total_tokens, threshold
         )
         return self._do_compact(messages)
 
-    def get_logs(
-        self,
-        pre: list[dict[str, Any]],
-        post: list[dict[str, Any]],
-    ) -> tuple[str, bool]:
+    def get_logs(self, pre: list[dict[str, Any]], post: list[dict[str, Any]]) -> tuple[str, bool]:
+        """返回压缩日志：token变化"""
         pre_tok = _estimate_total_tokens(pre)
         post_tok = _estimate_total_tokens(post)
         if post_tok < pre_tok:
-            return (
-                f"AutoCompact: {pre_tok} → {post_tok} tokens "
-                f"(saved {pre_tok - post_tok})",
-                True,
-            )
-        return "AutoCompact: no compression applied.", False
-
-    # -- Core logic -------------------------------------------------------
+            return f"AutoCompact: {pre_tok} → {post_tok} token (节省 {pre_tok - post_tok})", True
+        return "AutoCompact: 未执行压缩", False
 
     def _do_compact(self, messages: list[dict[str, Any]]) -> list[dict[str, Any]]:
-        """Generate LLM summary and rebuild message list."""
+        """执行压缩：生成摘要 → 重构消息列表"""
         summary = self._generate_summary(messages)
         if not summary:
-            logger.warning("AutoCompact: LLM returned empty summary — skipping.")
+            logger.warning("AutoCompact：LLM 返回空摘要，跳过压缩")
             return messages
-
         return self._build_compressed(messages, summary)
 
     def _generate_summary(self, messages: list[dict[str, Any]]) -> str:
-        """Call LLM via AG2's built-in ``_reflection_with_llm``."""
+        """核心方法：调用 AG2 内置 _reflection_with_llm 生成对话总结"""
         try:
-            result = self._agent._reflection_with_llm(
+            return self._agent._reflection_with_llm(
                 prompt=self._summary_prompt,
                 messages=messages,
-                llm_agent=self._agent,
-            )
-            return result or ""
+                llm_agent=self._agent
+            ) or ""
         except Exception:
-            logger.warning(
-                "AutoCompact: LLM summarization failed.", exc_info=True,
-            )
+            logger.warning("AutoCompact：LLM 总结失败", exc_info=True)
             return ""
 
     def _build_compressed(
         self,
         messages: list[dict[str, Any]],
-        summary: str,
+        summary: str
     ) -> list[dict[str, Any]]:
-        """Replace old messages with summary, keep recent verbatim."""
-        result: list[dict[str, Any]] = []
+        """
+        构建压缩后的消息列表：
+        1. 保留 system 消息
+        2. 插入总结
+        3. 保留最近 N 条原文
+        """
+        result = []
 
-        # 1) Preserve system message if present
+        # 保留系统提示
         if messages and messages[0].get("role") == "system":
             result.append(copy.deepcopy(messages[0]))
             messages = messages[1:]
 
-        # 2) Inject the summary as a user message
+        # 插入压缩总结
         result.append({
             "role": "user",
-            "content": (
-                "[Context Summary — earlier conversation has been compressed]\n\n"
-                + summary
-            ),
+            "content": "[Context Summary — earlier conversation has been compressed]\n\n" + summary
         })
 
-        # 3) Keep the most recent N messages verbatim
-        tail = messages[-self._keep_recent :] if len(messages) > self._keep_recent else messages
+        # 保留最近消息原文
+        tail = messages[-self._keep_recent:] if len(messages) > self._keep_recent else messages
         result.extend(copy.deepcopy(tail))
 
-        post_tokens = _estimate_total_tokens(result)
         logger.info(
-            "AutoCompact complete: %d messages → %d messages, ~%d tokens",
-            len(messages) + 1, len(result), post_tokens,
+            "AutoCompact 完成：%d 条消息 → %d 条消息，约 %d token",
+            len(messages) + 1, len(result), _estimate_total_tokens(result)
         )
         return result

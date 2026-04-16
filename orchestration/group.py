@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+from typing import Union, List, Dict
+
 from autogen import ConversableAgent
 from autogen.agentchat.group.patterns import DefaultPattern
 from autogen.agentchat.group.multi_agent_chat import initiate_group_chat, a_initiate_group_chat
@@ -35,7 +37,7 @@ def run_swarm(
 async def arun_swarm(
     initial_agent: ConversableAgent,
     agents: list[ConversableAgent],
-    prompt: str,
+    prompt: Union[str, List[Dict]],
     harness_config: HarnessConfig,
     context_variables=None,
 ):
@@ -54,4 +56,5 @@ async def arun_swarm(
         pattern=pattern,
         messages=prompt,
         max_rounds=harness_config.max_rounds,
+
     )
