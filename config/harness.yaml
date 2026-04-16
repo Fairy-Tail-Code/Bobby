@@ -32,8 +32,8 @@ harness:
     auto_compact_enabled: true
 
   hitl:
-    mode: email              # "email" or "stdin"
-    polling_interval: 30     # seconds between IMAP checks
+    mode: email              # "stdin" | "email" | "dingtalk" | "feishu"
+    polling_interval: 30     # seconds between polls
     timeout: 3600            # max seconds to wait for a reply
     subject_prefix: "[OpenHarness]"
 
@@ -43,3 +43,6 @@ harness:
     max_sessions: 3           # 最大并行会话数
   session:
     session_dir: session/
+
+  hitl:
+    mode: feishu

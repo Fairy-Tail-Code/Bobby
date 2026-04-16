@@ -28,6 +28,7 @@ class LlmAgentConfig:
 
 @dataclass
 class LlmConfig:
+    pm: LlmAgentConfig
     planner: LlmAgentConfig
     generator: LlmAgentConfig
     evaluator: LlmAgentConfig
@@ -85,9 +86,22 @@ class ImapConfig:
 
 
 @dataclass
+class DingTalkConfig:
+    client_id: str = ""      # AppKey / ClientId
+    client_secret: str = ""  # AppSecret / ClientSecret
+    robot_code: str = ""     # Robot code (usually same as client_id)
+
+
+@dataclass
+class FeishuConfig:
+    app_id: str = ""
+    app_secret: str = ""
+
+
+@dataclass
 class HitlConfig:
-    mode: str = "stdin"  # "email" or "stdin"
-    polling_interval: int = 30  # seconds between IMAP checks
+    mode: str = "stdin"  # "stdin" | "email" | "dingtalk" | "feishu"
+    polling_interval: int = 30  # seconds between polls
     timeout: int = 3600  # max seconds to wait for a reply
     subject_prefix: str = "[OpenHarness]"
 
@@ -145,6 +159,7 @@ def load_llm_config(project_dir: Path) -> LlmConfig:
     """Load LLM config from .env file in the project directory."""
     env = _load_dotenv(project_dir / ".env")
     return LlmConfig(
+        pm=_load_agent_env_config(env, "PM"),
         planner=_load_agent_env_config(env, "PLANNER"),
         generator=_load_agent_env_config(env, "GENERATOR"),
         evaluator=_load_agent_env_config(env, "EVALUATOR"),
@@ -218,7 +233,45 @@ def load_imap_config(project_dir: Path) -> ImapConfig:
 def load_role_emails(project_dir: Path) -> dict[str, str]:
     env = _load_dotenv(project_dir / ".env")
     return {
+        "pm": env.get("HITL_PM_EMAIL", ""),
         "planner": env.get("HITL_PLANNER_EMAIL", ""),
         "generator": env.get("HITL_GENERATOR_EMAIL", ""),
         "evaluator": env.get("HITL_EVALUATOR_EMAIL", ""),
+    }
+
+
+def load_dingtalk_config(project_dir: Path) -> DingTalkConfig:
+    env = _load_dotenv(project_dir / ".env")
+    return DingTalkConfig(
+        client_id=env.get("DINGTALK_CLIENT_ID", ""),
+        client_secret=env.get("DINGTALK_CLIENT_SECRET", ""),
+        robot_code=env.get("DINGTALK_ROBOT_CODE", ""),
+    )
+
+
+def load_feishu_config(project_dir: Path) -> FeishuConfig:
+    env = _load_dotenv(project_dir / ".env")
+    return FeishuConfig(
+        app_id=env.get("FEISHU_APP_ID", ""),
+        app_secret=env.get("FEISHU_APP_SECRET", ""),
+    )
+
+
+def load_role_dingtalk_ids(project_dir: Path) -> dict[str, str]:
+    env = _load_dotenv(project_dir / ".env")
+    return {
+        "pm": env.get("HITL_PM_DINGTALK_USER_ID", ""),
+        "planner": env.get("HITL_PLANNER_DINGTALK_USER_ID", ""),
+        "generator": env.get("HITL_GENERATOR_DINGTALK_USER_ID", ""),
+        "evaluator": env.get("HITL_EVALUATOR_DINGTALK_USER_ID", ""),
+    }
+
+
+def load_role_feishu_open_ids(project_dir: Path) -> dict[str, str]:
+    env = _load_dotenv(project_dir / ".env")
+    return {
+        "pm": env.get("HITL_PM_FEISHU_OPEN_ID", ""),
+        "planner": env.get("HITL_PLANNER_FEISHU_OPEN_ID", ""),
+        "generator": env.get("HITL_GENERATOR_FEISHU_OPEN_ID", ""),
+        "evaluator": env.get("HITL_EVALUATOR_FEISHU_OPEN_ID", ""),
     }

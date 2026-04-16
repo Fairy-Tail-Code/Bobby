@@ -34,7 +34,7 @@ dependencies:
     - mcp__workspace__delete_file
     - mcp__workspace__move_file
     - mcp__workspace__apply_patch
-    - mcp__shell__run_command
+    - mcp__shell__run_short_command
     - mcp__shell__start_command
     - mcp__shell__read_command_output
     - mcp__shell__write_stdin

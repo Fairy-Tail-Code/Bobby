@@ -9,11 +9,11 @@ async def test_create_async_tool_func():
     manager = MagicMock(spec=McpManager)
     manager.call_tool = AsyncMock(return_value="command output")
 
-    tool_func = create_async_tool_func(manager, "shell", "run_command")
+    tool_func = create_async_tool_func(manager, "shell", "run_short_command")
     result = await tool_func(cmd="echo hello")
 
     assert result == "command output"
-    manager.call_tool.assert_called_once_with("shell", "run_command", {"cmd": "echo hello"})
+    manager.call_tool.assert_called_once_with("shell", "run_short_command", {"cmd": "echo hello"})
 
 
 @pytest.mark.asyncio

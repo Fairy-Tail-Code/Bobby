@@ -9,7 +9,12 @@ import sys
 from datetime import datetime
 from pathlib import Path
 
-from infrastructure.config import load_llm_config, load_mcp_config, load_harness_config, load_smtp_config, load_imap_config, load_role_emails
+from infrastructure.config import (
+    load_llm_config, load_mcp_config, load_harness_config,
+    load_smtp_config, load_imap_config, load_role_emails,
+    load_dingtalk_config, load_role_dingtalk_ids,
+    load_feishu_config, load_role_feishu_open_ids,
+)
 from infrastructure.mcp.manager import McpManager
 from infrastructure.skills.registry import SkillRegistry
 from agents.factory import create_all_agents, SKILLS_DIR
@@ -70,15 +75,28 @@ async def run(prompt: str) -> None:
             )
 
     try:
-        # 如果开启邮件模式的人工介入（HITL），加载邮件相关配置
+        # 根据HITL模式加载对应通道配置
         smtp_config = None
         imap_config = None
         role_emails = None
+        dingtalk_config = None
+        role_dingtalk_ids = None
+        feishu_config = None
+        role_feishu_open_ids = None
+
         if harness_config.hitl.mode == "email":
             smtp_config = load_smtp_config(PROJECT_DIR)
             imap_config = load_imap_config(PROJECT_DIR)
             role_emails = load_role_emails(PROJECT_DIR)
             logger.info("HITL mode: email (SMTP=%s)", smtp_config.host)
+        elif harness_config.hitl.mode == "dingtalk":
+            dingtalk_config = load_dingtalk_config(PROJECT_DIR)
+            role_dingtalk_ids = load_role_dingtalk_ids(PROJECT_DIR)
+            logger.info("HITL mode: dingtalk (client_id=%s)", dingtalk_config.client_id[:6] + "..." if dingtalk_config.client_id else "N/A")
+        elif harness_config.hitl.mode == "feishu":
+            feishu_config = load_feishu_config(PROJECT_DIR)
+            role_feishu_open_ids = load_role_feishu_open_ids(PROJECT_DIR)
+            logger.info("HITL mode: feishu (app_id=%s)", feishu_config.app_id[:6] + "..." if feishu_config.app_id else "N/A")
 
         # 创建所有智能体：包含技能、转接逻辑、人工代理（如需）
         logger.info("Creating agents with skills and swarm handoffs...")
@@ -88,6 +106,10 @@ async def run(prompt: str) -> None:
             smtp_config=smtp_config,
             imap_config=imap_config,
             role_emails=role_emails,
+            dingtalk_config=dingtalk_config,
+            role_dingtalk_ids=role_dingtalk_ids,
+            feishu_config=feishu_config,
+            role_feishu_open_ids=role_feishu_open_ids,
         )
 
         # 构建智能体列表：核心 AI 智能体 + 可选的人工代理
@@ -96,9 +118,10 @@ async def run(prompt: str) -> None:
             agents_dict["planner"],  # 规划器
             agents_dict["generator"],  # 生成器
             agents_dict["evaluator"],  # 评估器
+            agents_dict["pm"]
         ]
         # 如果存在人工代理，追加到智能体列表
-        for key in ("user", "planner_owner", "generator_owner", "evaluator_owner"):
+        for key in ("user", "pm_owner", "planner_owner", "generator_owner", "evaluator_owner"):
             if key in agents_dict:
                 agents_list.append(agents_dict[key])
 
@@ -110,7 +133,7 @@ async def run(prompt: str) -> None:
         )
         # arun_swarm开始循环
         chat_result, context, last_speaker = await arun_swarm(
-            initial_agent=agents_dict["planner"],  # 从规划器开始
+            initial_agent=agents_dict["pm"],  # 从规划器开始
             agents=agents_list,  # 参与群聊的所有智能体
             prompt=prompt,  # 用户输入提示词
             harness_config=harness_config,  # 配置

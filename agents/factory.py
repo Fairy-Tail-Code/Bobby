@@ -12,8 +12,17 @@ from autogen.agentchat.group.llm_condition import StringLLMCondition
 from agents.planner import create_planner
 from agents.generator import create_generator
 from agents.evaluator import create_evaluator
-from agents.user import create_user, create_email_user_proxies
-from infrastructure.config import ContextConfig, HarnessConfig, LlmConfig
+from agents.PM import create_pm
+from agents.user import (
+    create_user,
+    create_email_channel_proxies,
+    create_dingtalk_channel_proxies,
+    create_feishu_channel_proxies,
+)
+from infrastructure.config import (
+    ContextConfig, HarnessConfig, LlmConfig,
+    DingTalkConfig, FeishuConfig, SmtpConfig, ImapConfig,
+)
 from infrastructure.context.auto_compact import AutoCompactTransform
 from infrastructure.context.snip import create_snip_transform
 from infrastructure.mcp.manager import McpManager
@@ -24,6 +33,9 @@ from infrastructure.skills.tool import register_load_skill_tool
 
 
 logger = logging.getLogger(__name__)
+
+# HITL modes that use per-role channel proxies (not stdin)
+_CHANNEL_MODES = {"email", "dingtalk", "feishu"}
 
 SKILLS_DIR = Path(__file__).parent.parent / "skills"
 
@@ -54,6 +66,7 @@ EVALUATOR_SKILLS = [
 ]
 
 # MCP server assignments per agent (must cover all MCP dependencies declared in assigned skills)
+PM_MCP_SERVERS = ["workspace", "shell"]
 PLANNER_MCP_SERVERS = ["workspace", "shell"]
 GENERATOR_MCP_SERVERS = ["shell", "git", "workspace", "browser", "docker", "database"]
 EVALUATOR_MCP_SERVERS = ["browser", "shell", "http_api", "workspace"]
@@ -113,6 +126,17 @@ def _register_context_transforms(
     )
 
 
+def create_pm_agent(
+    llm_config: LlmConfig,
+    mcp_manager: McpManager | None = None,
+) -> ConversableAgent:
+    """Create a PM agent with basic MCP tools (workspace, shell)."""
+    agent = create_pm(llm_config)
+    if mcp_manager:
+        register_tools_for_agent(agent, mcp_manager, PM_MCP_SERVERS)
+    return agent
+
+
 def create_planner_agent(
     llm_config: LlmConfig,
     mcp_manager: McpManager | None = None,
@@ -163,6 +187,8 @@ def creat_user_agent(
 def setup_handoffs(agents: dict[str, ConversableAgent], hitl_mode: str = "stdin") -> None:
     """Set up swarm handoff conditions between agents.
 
+    PM -> Planner (PRD 完成)
+    PM -> pm_owner (需要用户补充信息)
     Planner -> Generator (需求拆解完毕)
     Planner -> Generator/Evaluator (回答问题后交回)
     Generator -> Evaluator (编码完成)
@@ -174,20 +200,37 @@ def setup_handoffs(agents: dict[str, ConversableAgent], hitl_mode: str = "stdin"
     In email mode, each AI agent hands off to its dedicated role owner.
     In stdin mode, all hand off to a single "user" proxy.
     """
+    pm = agents["pm"]
     planner = agents["planner"]
     generator = agents["generator"]
     evaluator = agents["evaluator"]
 
     # Determine per-role human targets
-    if hitl_mode == "email":
+    if hitl_mode in _CHANNEL_MODES:
+        pm_human = AgentTarget(agents["pm_owner"])
         planner_human = AgentTarget(agents["planner_owner"])
         generator_human = AgentTarget(agents["generator_owner"])
         evaluator_human = AgentTarget(agents["evaluator_owner"])
     else:
         user = agents["user"]
+        pm_human = AgentTarget(user)
         planner_human = AgentTarget(user)
         generator_human = AgentTarget(user)
         evaluator_human = AgentTarget(user)
+
+    # PM handoffs
+    pm.handoffs = Handoffs()
+    pm.handoffs.add_llm_conditions([
+        OnCondition(
+            target=AgentTarget(planner),
+            condition=StringLLMCondition("TRANSFER TO PLANNER，当PRD已完成且经过用户确认，可以交给Planner进行技术拆解时"),
+        ),
+        OnCondition(
+            target=pm_human,
+            condition=StringLLMCondition(
+                "TRANSFER TO USER，当需要向用户提问以补充需求信息、澄清模糊之处、或确认PRD草稿时"),
+        ),
+    ]).set_after_work(StayTarget())
 
     planner.handoffs = Handoffs()
     planner.handoffs.add_llm_conditions([
@@ -238,31 +281,42 @@ def setup_handoffs(agents: dict[str, ConversableAgent], hitl_mode: str = "stdin"
         ),
     ]).set_after_work(TerminateTarget())
 
-    # Human proxies return to planner after responding
-    if hitl_mode == "email":
+    # Human proxies return to their corresponding AI agent after responding
+    if hitl_mode in _CHANNEL_MODES:
+        agents["pm_owner"].handoffs = Handoffs()
+        agents["pm_owner"].handoffs.set_after_work(AgentTarget(pm))
         for owner_key in ("planner_owner", "generator_owner", "evaluator_owner"):
             agents[owner_key].handoffs = Handoffs()
             agents[owner_key].handoffs.set_after_work(AgentTarget(planner))
     else:
         agents["user"].handoffs = Handoffs()
-        agents["user"].handoffs.set_after_work(AgentTarget(planner))
+        agents["user"].handoffs.set_after_work(AgentTarget(pm))
 def create_all_agents(
     llm_config: LlmConfig,
     mcp_manager: McpManager,
     skill_registry: SkillRegistry | None = None,
     harness_config: HarnessConfig | None = None,
-    smtp_config=None,
-    imap_config=None,
+    smtp_config: SmtpConfig | None = None,
+    imap_config: ImapConfig | None = None,
     role_emails: dict[str, str] | None = None,
+    dingtalk_config: DingTalkConfig | None = None,
+    role_dingtalk_ids: dict[str, str] | None = None,
+    feishu_config: FeishuConfig | None = None,
+    role_feishu_open_ids: dict[str, str] | None = None,
 ) -> dict[str, ConversableAgent]:
     """Create all agents with their tools, skills, and handoffs.
 
-    In email HITL mode, creates 3 role-specific EmailUserProxyAgent instances.
-    In stdin mode, creates a single UserProxyAgent.
+    HITL modes:
+      - ``stdin``    : single UserProxyAgent reading from terminal.
+      - ``email``    : per-role proxies via SMTP/IMAP.
+      - ``dingtalk`` : per-role proxies via DingTalk Stream + REST API.
+      - ``feishu``   : per-role proxies via Feishu WS + REST API.
     """
     hitl_mode = harness_config.hitl.mode if harness_config else "stdin"
+    hitl_cfg = harness_config.hitl if harness_config else None
 
     agents: dict[str, ConversableAgent] = {
+        "pm": create_pm_agent(llm_config, mcp_manager),
         "planner": create_planner_agent(llm_config, mcp_manager, skill_registry),
         "generator": create_generator_agent(
             llm_config, mcp_manager, skill_registry,
@@ -270,19 +324,34 @@ def create_all_agents(
         "evaluator": create_evaluator_agent(llm_config, mcp_manager, skill_registry),
     }
 
-    # HITL proxies
+    # ---- HITL proxies ----
     if hitl_mode == "email" and smtp_config and imap_config and role_emails:
-        email_proxies = create_email_user_proxies(
-            smtp_config, imap_config, harness_config.hitl, role_emails,
+        proxies = create_email_channel_proxies(
+            smtp_config, imap_config, hitl_cfg, role_emails,
         )
-        agents.update(email_proxies)
-        logger.info("Created %d email proxy agents", len(email_proxies))
+        agents.update(proxies)
+        logger.info("Created %d email proxy agents", len(proxies))
+
+    elif hitl_mode == "dingtalk" and dingtalk_config and role_dingtalk_ids:
+        proxies = create_dingtalk_channel_proxies(
+            dingtalk_config, hitl_cfg, role_dingtalk_ids,
+        )
+        agents.update(proxies)
+        logger.info("Created %d DingTalk proxy agents", len(proxies))
+
+    elif hitl_mode == "feishu" and feishu_config and role_feishu_open_ids:
+        proxies = create_feishu_channel_proxies(
+            feishu_config, hitl_cfg, role_feishu_open_ids,
+        )
+        agents.update(proxies)
+        logger.info("Created %d Feishu proxy agents", len(proxies))
+
     else:
         agents["user"] = creat_user_agent(llm_config)
 
     # Register context compression transforms (Level 1 + Level 4)
     # Only for AI agents, not for email proxies
-    _ai_agent_keys = {"planner", "generator", "evaluator"}
+    _ai_agent_keys = {"pm", "planner", "generator", "evaluator"}
     if harness_config and harness_config.context.enabled:
         for key in _ai_agent_keys:
             _register_context_transforms(agents[key], harness_config.context)

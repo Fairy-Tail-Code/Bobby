@@ -8,6 +8,6 @@ def test_load_prompt_exists():
 
 
 def test_load_all_prompts():
-    for name in ["planner", "generator", "evaluator"]:
+    for name in ["pm", "planner", "generator", "evaluator"]:
         prompt = load_prompt(name)
         assert len(prompt) > 100, f"Prompt for {name} is too short"

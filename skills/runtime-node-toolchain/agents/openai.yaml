@@ -19,7 +19,7 @@ dependencies:
     - type: mcp
       value: docker
   allowed_tools:
-    - mcp__shell__run_command
+    - mcp__shell__run_short_command
     - mcp__shell__start_command
     - mcp__shell__read_command_output
     - mcp__shell__write_stdin

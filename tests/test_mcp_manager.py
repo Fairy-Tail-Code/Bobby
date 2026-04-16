@@ -11,12 +11,12 @@ def test_mcp_manager_init():
 def test_mcp_manager_tool_info():
     info = McpToolInfo(
         server_name="shell",
-        tool_name="run_command",
-        description="Run a shell command",
+        tool_name="run_short_command",
+        description="Run a short-lived shell command",
         input_schema={"type": "object", "properties": {"cmd": {"type": "string"}}},
     )
     assert info.server_name == "shell"
-    assert info.tool_name == "run_command"
+    assert info.tool_name == "run_short_command"
 
 
 def test_mcp_manager_get_tools_empty():
@@ -31,4 +31,4 @@ def test_mcp_manager_get_all_tools_empty():
 
 def test_mcp_manager_get_tool_not_found():
     manager = McpManager()
-    assert manager.get_tool("shell", "run_command") is None
+    assert manager.get_tool("shell", "run_short_command") is None

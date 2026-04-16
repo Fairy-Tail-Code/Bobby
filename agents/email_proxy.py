@@ -292,6 +292,10 @@ class EmailUserProxyAgent(UserProxyAgent):
 # ------------------------------------------------------------------
 
 _ROLE_DESCRIPTIONS = {
+    "pm_owner": (
+        "你是 PM 负责人，也就是用户本人。PM agent 会向你提问以补充和澄清需求细节，"
+        "也会将 PRD 草稿发给你确认。请根据你的实际需求进行补充、修改或确认。"
+    ),
     "planner_owner": (
         "你是 Planner 负责人。当 Planner agent 遇到需求不明确、信息不足时，"
         "会向你提问。请补充需求细节或澄清模糊之处。"
@@ -314,9 +318,9 @@ def create_email_proxies(
     hitl_config: HitlConfig,
     role_emails: dict[str, str],
 ) -> dict[str, EmailUserProxyAgent]:
-    """Create 3 email-based user proxies, one per role.
+    """Create email-based user proxies, one per role.
 
-    Returns dict keyed by "planner_owner", "generator_owner", "evaluator_owner".
+    Returns dict keyed by "pm_owner", "planner_owner", "generator_owner", "evaluator_owner".
     """
     proxies: dict[str, EmailUserProxyAgent] = {}
     for role_key, description in _ROLE_DESCRIPTIONS.items():

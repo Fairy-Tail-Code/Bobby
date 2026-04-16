@@ -5,7 +5,9 @@ from infrastructure.config import load_llm_config, load_mcp_config, load_harness
 from agents.planner import create_planner
 from agents.generator import create_generator
 from agents.evaluator import create_evaluator
+from agents.PM import create_pm
 from agents.factory import setup_handoffs
+from agents.user import create_user
 from orchestration.termination import create_termination_check
 
 
@@ -31,9 +33,11 @@ def test_config_loading():
 
 def test_agent_creation():
     llm = load_llm_config(PROJECT_DIR)
+    pm = create_pm(llm)
     planner = create_planner(llm)
     generator = create_generator(llm)
     evaluator = create_evaluator(llm)
+    assert pm.name == "PM"
     assert planner.name == "Planner"
     assert generator.name == "Generator"
     assert evaluator.name == "Evaluator"
@@ -42,12 +46,15 @@ def test_agent_creation():
 def test_handoffs_setup():
     llm = load_llm_config(PROJECT_DIR)
     agents = {
+        "pm": create_pm(llm),
         "planner": create_planner(llm),
         "generator": create_generator(llm),
         "evaluator": create_evaluator(llm),
+        "user": create_user(llm),
     }
     setup_handoffs(agents)
     # Verify handoffs were set
+    assert len(agents["pm"].handoffs.llm_conditions) > 0
     assert len(agents["planner"].handoffs.llm_conditions) > 0
     assert len(agents["generator"].handoffs.llm_conditions) > 0
     assert len(agents["evaluator"].handoffs.llm_conditions) > 0

@@ -131,7 +131,7 @@ _BLOCKED_PATTERNS: list[tuple[re.Pattern[str], str]] = [
     ),
 ]
 
-# Long-running server patterns — only enforced in run_command (not start_command).
+# Long-running server patterns — only enforced in run_short_command (not start_command).
 _LONG_RUNNING_PATTERNS: list[tuple[re.Pattern[str], str]] = [
     (
         re.compile(r"\buvicorn\b"),
@@ -190,7 +190,7 @@ def _validate_command(cmd: str) -> str | None:
 
 
 def _validate_short_lived(cmd: str) -> str | None:
-    """Extra checks for run_command: reject long-running servers."""
+    """Extra checks for run_short_command: reject long-running servers."""
     for pattern, reason in _LONG_RUNNING_PATTERNS:
         if pattern.search(cmd):
             return reason
@@ -250,7 +250,9 @@ def build_shell_server() -> FastMCP:
 @shell_server.tool(
     description=(
         "Run one short-lived shell command and wait for completion. "
-        "For long-running processes (servers, watchers), use `start_command` instead."
+        "Only for quick commands that finish on their own (git status, ls, npm install, etc.). "
+        "NEVER use this for servers, dev servers, watchers, or any process that stays running. "
+        "For those, use `start_command` instead."
     ),
     annotations=ToolAnnotations(
         readOnlyHint=False,
@@ -258,17 +260,17 @@ def build_shell_server() -> FastMCP:
         openWorldHint=True,
     ),
 )
-async def run_command(
+async def run_short_command(
     cmd: str,
     cwd: str | None = None,
     env: dict[str, str] | None = None,
     timeout_ms: int = 120_000,
 ) -> dict[str, Any]:
-    """Run one shell command to completion and capture its output."""
+    """Run one short-lived shell command to completion and capture its output."""
     if not cmd.strip():
-        raise ValueError("Tool 'run_command' field 'cmd' must be a non-empty string.")
+        raise ValueError("Tool 'run_short_command' field 'cmd' must be a non-empty string.")
     if timeout_ms <= 0:
-        raise ValueError("Tool 'run_command' field 'timeout_ms' must be a positive integer.")
+        raise ValueError("Tool 'run_short_command' field 'timeout_ms' must be a positive integer.")
 
     rejection = _validate_command(cmd)
     if rejection:

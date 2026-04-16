@@ -26,7 +26,7 @@ dependencies:
     - mcp__workspace__read_file
     - mcp__workspace__search_text
     - mcp__workspace__stat_file
-    - mcp__shell__run_command
+    - mcp__shell__run_short_command
     - mcp__database__find_sqlite_databases
     - mcp__database__describe_database_schema
     - mcp__database__describe_table_schema

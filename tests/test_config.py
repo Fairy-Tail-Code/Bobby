@@ -6,6 +6,10 @@ from infrastructure.config import load_llm_config, load_mcp_config, load_harness
 def test_load_llm_config(tmp_path):
     env_file = tmp_path / ".env"
     env_file.write_text(
+        "PM_MODEL=test-model\n"
+        "PM_BASE_URL=http://localhost:11434/v1\n"
+        "PM_API_KEY=test-key\n"
+        "PM_TEMPERATURE=0.7\n"
         "PLANNER_MODEL=test-model\n"
         "PLANNER_BASE_URL=http://localhost:11434/v1\n"
         "PLANNER_API_KEY=test-key\n"
@@ -20,6 +24,8 @@ def test_load_llm_config(tmp_path):
         "EVALUATOR_TEMPERATURE=0.2\n"
     )
     config = load_llm_config(tmp_path)
+    assert config.pm.model == "test-model"
+    assert config.pm.temperature == 0.7
     assert config.planner.model == "test-model"
     assert config.planner.temperature == 0.7
     assert config.generator.temperature == 0.4
@@ -29,6 +35,9 @@ def test_load_llm_config(tmp_path):
 def test_load_llm_config_default_temperature(tmp_path):
     env_file = tmp_path / ".env"
     env_file.write_text(
+        "PM_MODEL=m\n"
+        "PM_BASE_URL=http://x\n"
+        "PM_API_KEY=k\n"
         "PLANNER_MODEL=m\n"
         "PLANNER_BASE_URL=http://x\n"
         "PLANNER_API_KEY=k\n"
@@ -40,6 +49,7 @@ def test_load_llm_config_default_temperature(tmp_path):
         "EVALUATOR_API_KEY=k\n"
     )
     config = load_llm_config(tmp_path)
+    assert config.pm.temperature == 0.7
     assert config.planner.temperature == 0.7
     assert config.generator.temperature == 0.7
     assert config.evaluator.temperature == 0.7
