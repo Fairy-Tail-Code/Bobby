@@ -1,6 +1,4 @@
-.env__pycache__/
-.claude/
 __pycache__/
+.claude/
 .env
-../todo
-./session/
+session/
