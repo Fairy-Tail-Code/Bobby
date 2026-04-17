@@ -10,6 +10,8 @@ import asyncio
 import json
 import logging
 import re
+import secrets
+from dataclasses import dataclass, asdict
 from datetime import datetime
 from pathlib import Path
 
@@ -36,6 +38,27 @@ from infrastructure.skills.registry import SkillRegistry
 logger = logging.getLogger(__name__)
 
 _TERMINATE_KEYWORDS = {"终止", "停止", "abort", "cancel", "stop"}
+
+
+@dataclass
+class SessionSnapshot:
+    """Structured snapshot of a swarm session for persistence and resume."""
+
+    session_id: str
+    chat_id: str
+    timestamp: str
+    prompt: str
+    messages: list[dict]
+    max_rounds: int
+    status: str  # "terminated" | "completed"
+    rounds_used: int
+
+    @staticmethod
+    def generate_id() -> str:
+        return secrets.token_hex(4)  # 8 hex chars
+
+    def to_dict(self) -> dict:
+        return asdict(self)
 
 
 class SwarmSession:
@@ -74,6 +97,8 @@ class SwarmSession:
         self._channel_proxies: dict[str, ChannelUserProxyAgent] = {}
         self._terminated = False
         self._prompt: str = ""
+        self._is_resume: bool = False
+        self._resume_messages: list[dict] = []
 
     @property
     def is_running(self) -> bool:
@@ -84,8 +109,17 @@ class SwarmSession:
     def start(self, prompt: str) -> None:
         """Create agents and launch the swarm task."""
         self._prompt = prompt
+        self._is_resume = False
         self._task = asyncio.create_task(self._run())
         logger.info("SwarmSession started: chat_id=%s", self.chat_id)
+
+    def start_resume(self, saved_messages: list[dict], prompt: str) -> None:
+        """Resume a previous session from saved messages."""
+        self._prompt = prompt
+        self._resume_messages = saved_messages
+        self._is_resume = True
+        self._task = asyncio.create_task(self._run())
+        logger.info("SwarmSession resumed: chat_id=%s", self.chat_id)
 
     async def _run(self) -> None:
         """Build agents, start message monitor, and run swarm."""
@@ -103,31 +137,64 @@ class SwarmSession:
                 if key in self._agents:
                     agents_list.append(self._agents[key])
 
-            # todo （优先级低）对比DefaultPattern和AutoPattern的区别是什么。
             pattern = DefaultPattern(
                 initial_agent=self._agents["pm"],
                 agents=agents_list,
             )
 
+            # Choose messages source: saved messages for resume, prompt for new
+            if self._is_resume:
+                valid_names = {a.name for a in agents_list}
+                messages_input = self._preprocess_resume_messages(
+                    self._resume_messages, valid_names,
+                )
+                # If all messages were filtered out, fall back to original prompt
+                if not messages_input:
+                    logger.warning(
+                        "All resume messages filtered out, falling back to prompt: chat_id=%s",
+                        self.chat_id,
+                    )
+                    messages_input = self._prompt
+                    self._is_resume = False
+            else:
+                messages_input = self._prompt
+
             result, context, last_speaker = await a_initiate_group_chat(
                 pattern=pattern,
-                messages=self._prompt,
+                messages=messages_input,
                 max_rounds=self._harness_config.max_rounds,
             )
 
             # Stop the message monitor now that the swarm is done
             monitor_task.cancel()
 
-            # Save session
-            self._save_session(result.chat_history)
+            # Save snapshot with generated session_id
+            session_id = SessionSnapshot.generate_id()
+            self._save_snapshot(
+                messages=result.chat_history,
+                session_id=session_id,
+                status="completed",
+            )
 
-            # Notify user
             await self._bot.send_text(
                 self.chat_id,
-                f"✅ 任务完成！最后发言: {last_speaker.name}",
+                f"✅ 任务完成！最后发言: {last_speaker.name}\n"
+                f"📋 会话ID（可用于恢复）: {session_id}",
             )
         except asyncio.CancelledError:
-            await self._bot.send_text(self.chat_id, "⚠️ 任务已终止")
+            # Extract messages from agents before they are cleaned up
+            messages = self._extract_messages_from_agents()
+            session_id = SessionSnapshot.generate_id()
+            self._save_snapshot(
+                messages=messages,
+                session_id=session_id,
+                status="terminated",
+            )
+            await self._bot.send_text(
+                self.chat_id,
+                f"⚠️ 任务已终止\n"
+                f"📋 会话ID（可用于恢复）: {session_id}",
+            )
         except Exception:
             logger.exception("SwarmSession error: chat_id=%s", self.chat_id)
             await self._bot.send_text(self.chat_id, "❌ 任务执行出错，请查看日志")
@@ -229,6 +296,9 @@ class SwarmSession:
         if tool_calls:
             for tc in tool_calls:
                 fn_name = tc.get("function", {}).get("name", "unknown")
+                # Skip AG2 internal handoff tools
+                if fn_name.startswith("transfer_to_") or fn_name == "terminate_command":
+                    continue
                 await self._bot.send_text(
                     self.chat_id,
                     f"🔧 **{name}** 正在执行工具: `{fn_name}`",
@@ -260,14 +330,76 @@ class SwarmSession:
 
     # --------------------------------------------------- session save
 
-    def _save_session(self, chat_history: list[dict]) -> None:
-        """Save chat history to JSON file."""
+    def _save_snapshot(
+        self,
+        messages: list[dict],
+        session_id: str,
+        status: str,
+    ) -> None:
+        """Save a structured session snapshot for later resume."""
         try:
+            # Strip TERMINATE from last message to prevent immediate re-termination on resume
+            messages = self._strip_terminate_from_last_message(messages)
+
             Path(self._session_dir).mkdir(parents=True, exist_ok=True)
-            timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
-            filepath = Path(self._session_dir) / f"chat_history_{self.chat_id}_{timestamp}.json"
+            snapshot = SessionSnapshot(
+                session_id=session_id,
+                chat_id=self.chat_id,
+                timestamp=datetime.now().isoformat(),
+                prompt=self._prompt,
+                messages=messages,
+                max_rounds=self._harness_config.max_rounds,
+                status=status,
+                rounds_used=len(messages),
+            )
+            filepath = Path(self._session_dir) / f"snapshot_{session_id}.json"
             with open(filepath, "w", encoding="utf-8") as f:
-                json.dump(chat_history, f, ensure_ascii=False, indent=2)
-            logger.info("Session saved: %s", filepath)
+                json.dump(snapshot.to_dict(), f, ensure_ascii=False, indent=2)
+            logger.info("Session snapshot saved: %s (status=%s)", filepath, status)
         except Exception:
-            logger.exception("Failed to save session")
+            logger.exception("Failed to save session snapshot")
+
+    def _extract_messages_from_agents(self) -> list[dict]:
+        """Extract chat history from agent chat_messages.
+
+        In group chat, every agent has a full copy of messages.
+        """
+        pm = self._agents.get("pm")
+        if not pm:
+            return []
+        for _other_agent, msgs in pm.chat_messages.items():
+            return list(msgs)
+        return []
+
+    @staticmethod
+    def _preprocess_resume_messages(
+        messages: list[dict], valid_names: set[str],
+    ) -> list[dict]:
+        """Preprocess saved messages for resume compatibility.
+
+        Strips 'name' from messages whose agent name doesn't match
+        any agent in the new group chat. This prevents AG2's
+        process_initial_messages from raising ValueError on
+        unrecognized agent names like 'chat_manager'.
+        """
+        result = []
+        for msg in messages:
+            name = msg.get("name", "")
+            if name and name not in valid_names:
+                # Strip name — AG2 will assign to manager or create temp proxy
+                msg = {k: v for k, v in msg.items() if k != "name"}
+            result.append(msg)
+        return result
+
+    @staticmethod
+    def _strip_terminate_from_last_message(messages: list[dict]) -> list[dict]:
+        """Remove TERMINATE keyword from last message to allow resume."""
+        if not messages:
+            return messages
+        messages = [dict(m) for m in messages]  # shallow copy
+        last = messages[-1]
+        content = last.get("content", "")
+        if isinstance(content, str):
+            content = re.sub(r"\bTERMINATE\b", "", content, flags=re.IGNORECASE).strip()
+            last["content"] = content
+        return messages

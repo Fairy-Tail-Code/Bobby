@@ -22,9 +22,24 @@ from app.schemas import (
     UserResponse,
     MessageResponse,
 )
-from app.tasks.email_tasks import send_verification_email, send_reset_password_email
 
 router = APIRouter(prefix="/auth", tags=["auth"])
+
+
+def _dispatch_celery_task(task_func, *args):
+    """
+    Safely dispatch a Celery task.
+    If Redis is not available, the task will be skipped with a warning log.
+    This allows the API to function even without Redis for basic testing.
+    """
+    try:
+        result = task_func.delay(*args)
+        print(f"[CELERY] Task dispatched: {result.id}")
+        return result
+    except Exception as e:
+        print(f"[CELERY WARNING] Failed to dispatch task (Redis may not be running): {e}")
+        print(f"[CELERY WARNING] Task was skipped. Email will NOT be sent.")
+        return None
 
 
 @router.post("/register", response_model=MessageResponse, status_code=status.HTTP_201_CREATED)
@@ -66,8 +81,9 @@ def register(request: RegisterRequest, db: Session = Depends(get_db)):
     db.add(verification_token)
     db.commit()
 
-    # 🎯 核心：通过 Celery 异步发送验证邮件（不阻塞响应）
-    send_verification_email.delay(user.email, token)
+    # 核心：通过 Celery 异步发送验证邮件（不阻塞响应）
+    from app.tasks.email_tasks import send_verification_email
+    _dispatch_celery_task(send_verification_email, user.email, token)
 
     return MessageResponse(
         message="Registration successful! Please check your email to verify your account.",
@@ -190,8 +206,9 @@ def forgot_password(request: ForgotPasswordRequest, db: Session = Depends(get_db
     db.add(reset_token)
     db.commit()
 
-    # 🎯 核心：通过 Celery 异步发送密码重置邮件
-    send_reset_password_email.delay(user.email, token)
+    # 核心：通过 Celery 异步发送密码重置邮件
+    from app.tasks.email_tasks import send_reset_password_email
+    _dispatch_celery_task(send_reset_password_email, user.email, token)
 
     return MessageResponse(
         message="If your email is registered, you will receive a password reset email.",
@@ -293,8 +310,9 @@ def resend_verification(request: ResendVerificationRequest, db: Session = Depend
     db.add(verification_token)
     db.commit()
 
-    # 🎯 Celery 异步发送
-    send_verification_email.delay(user.email, token)
+    # Celery 异步发送
+    from app.tasks.email_tasks import send_verification_email
+    _dispatch_celery_task(send_verification_email, user.email, token)
 
     return MessageResponse(
         message="A new verification email has been sent. Please check your inbox.",

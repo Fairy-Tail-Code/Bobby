@@ -116,3 +116,27 @@ for reply_func_tuple in self._reply_func_list:
 - `process_all_messages_before_reply` — 也是 pre-processing
 - `update_agent_state_before_reply` — 也是 pre-processing
 - `send()` 方法 hook — group chat 中消息由 GroupChatManager 管理，不走 agent.send()
+
+## Handoff 内部工具（2026-04-17 发现）
+
+AG2 的 handoff 机制不是通过字符串匹配或回调实现的，而是通过让 LLM 生成特殊的 **tool call** 来执行转移。
+
+### 内部工具类型
+
+| 工具名 | 作用 | 来源 |
+|--------|------|------|
+| `transfer_to_{AgentName}_{N}` | 转移到指定 agent | `OnCondition(target=AgentTarget(agent))` |
+| `terminate_command` | 终止整个 swarm 对话 | `set_after_work(TerminateTarget())` |
+
+### 关键问题
+
+1. **所有 agent 都能看到所有 handoff 工具**：AG2 将 handoff 工具注册给 group chat 中的每个 agent，而不仅仅是配置了该 handoff 的 agent。这意味着 Generator 可以看到并调用 `terminate_command`，即使只有 Evaluator 配置了 `TerminateTarget()`。
+
+2. **LLM 可能误用 handoff 工具**：如果 LLM 看到 `terminate_command` 在自己的工具列表中，可能会在认为任务完成时调用它。对于 `after_work=StayTarget()` 的 agent，这会导致工具调用无法正确处理而卡死。
+
+3. **工具名后缀带数字**：如 `transfer_to_Evaluator_1`，数字后缀是 AG2 内部生成的，可能随 group chat 成员变化。
+
+### 防护措施
+
+- 在 agent 的 prompt 中明确禁止调用不属于自己角色的 handoff 工具（如 Generator 不能调用 `terminate_command`）
+- 消息展示层过滤掉 `transfer_to_*` 和 `terminate_command`，不展示给用户

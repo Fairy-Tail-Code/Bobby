@@ -194,7 +194,7 @@ def load_harness_config(config_dir: Path) -> HarnessConfig:
         subject_prefix=hitl_raw.get("subject_prefix", "[OpenHarness]"),
     )
     return HarnessConfig(
-        max_rounds=eval_cfg["max_rounds"],
+        max_rounds=ctx_raw["max_rounds"],
         score_threshold=eval_cfg["score_threshold"],
         dimensions=dimensions,
         tech_stack=raw.get("tech_stack", {}),

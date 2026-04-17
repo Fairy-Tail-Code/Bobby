@@ -222,6 +222,24 @@ if old:
 
 **修复**：信号注册包裹 try/except，回退到 `KeyboardInterrupt` 捕获 Ctrl+C。
 
+#### 4. 消息重复推送（每条消息 4 次）
+
+消息监控 `_monitor_messages` 遍历 4 个 AI agent 的 `chat_messages`。但在 group chat 中，每条消息会被广播给所有 agent，所以每个 agent 的 `chat_messages` 都包含相同的完整消息副本。同一条消息被 4 个 agent 各推送一次。
+
+**修复**：只监控 PM 的 `chat_messages`——group chat 中每个 agent 的消息历史是完整副本，看一个就够了。
+
+#### 5. AG2 内部 handoff 工具被显示为"正在执行工具"
+
+AG2 的 handoff 机制通过内部 tool call 实现，如 `transfer_to_Evaluator_1`、`transfer_to_Generator_1`、`terminate_command`。消息监控检测到 `tool_calls` 就推送到飞书，用户看到的是无意义的内部工具名。
+
+**修复**：`_push_message_to_feishu` 中过滤掉以 `transfer_to_` 开头或名为 `terminate_command` 的工具调用。
+
+#### 6. Generator 误用 terminate_command 导致卡死
+
+AG2 将 handoff 内部工具注册给所有 agent，包括 `terminate_command`。Generator 的 LLM 看到"需要重启后端"时调用了 `terminate_command`，但 Generator 的 `after_work` 是 `StayTarget()` 而非 `TerminateTarget()`，导致工具调用无法正确处理而卡死。
+
+**修复**：Generator 的 prompt 中明确添加 "NEVER call terminate_command" 约束。
+
 ### 文件变更清单
 
 - `infrastructure/feishu_bot.py` — **新建**，FeishuBotService（WS 接收 + REST 发送 + 群聊/单聊）
@@ -232,3 +250,35 @@ if old:
 - `agents/channel_proxy.py` — **修改**，`a_get_human_input` 支持 Future 等待
 - `docs/superpowers/specs/2026-04-17-feishu-service-design.md` — **新建**，设计文档
 - `docs/superpowers/plans/2026-04-17-feishu-service.md` — **新建**，实施计划
+
+## 2026-04-17 (Session 存储 & 恢复)
+
+### 架构决策
+
+#### Session 上下文持久化与恢复
+
+- **背景**：原系统在会话结束（用户终止或任务完成）后仅保存原始 `chat_history` JSON，无法恢复会话继续多轮对话。用户需要通过 `harness resume <session_id>` 命令恢复之前的会话。
+- **方案**：
+  1. 新增 `SessionSnapshot` 数据类，保存结构化会话快照（session_id, chat_id, timestamp, prompt, messages, max_rounds, status）
+  2. 会话结束时（终止或完成）自动生成 8 位 hex session_id 并保存快照
+  3. 用户通过 `harness resume <session_id>` 恢复会话，通过 `harness list` 查看可恢复的会话列表
+- **AG2 Resume 原理**：`a_initiate_group_chat(pattern, messages=saved_messages)` 在 `len(processed_messages) > 1` 时自动调用 `manager.a_resume()`，无需手动调用 resume 方法
+
+### 关键技术决策
+
+#### 1. 终止时消息提取
+
+`terminate()` 调用 `task.cancel()` 触发 `CancelledError`。此时 `self._agents` 仍然存活，可以从 PM agent 的 `chat_messages` 属性提取完整聊天历史。Group chat 中每个 agent 持有所有消息的完整副本。
+
+#### 2. TERMINATE 字符串剥离
+
+保存快照前从最后一条消息中移除 `TERMINATE` 关键词，防止恢复后立即触发终止条件。使用 `_strip_terminate_from_last_message()` 方法处理。
+
+#### 3. 跨 chat_id 恢复
+
+恢复时创建新的 SwarmSession 绑定到当前 chat_id，使用新的 ChannelFeishuService。AG2 的 `a_resume` 通过 agent name（如 "PM", "Planner"）匹配，`_create_agents` 使用相同的名称创建 agent，因此跨 chat_id 恢复可行。
+
+### 文件变更清单
+
+- `infrastructure/swarm_session.py` — 新增 `SessionSnapshot` 数据类；新增 `start_resume()` 方法；重构 `_run()` 支持新/恢复双模式；`_save_session()` 替换为 `_save_snapshot()`；新增 `_extract_messages_from_agents()` 和 `_strip_terminate_from_last_message()`
+- `infrastructure/session_manager.py` — 新增 `harness resume` 和 `harness list` 命令解析；新增 `_resume_session()` 和 `_list_sessions()` 方法

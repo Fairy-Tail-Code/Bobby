@@ -45,6 +45,9 @@ Do NOT write transfer phrases as plain text — you must invoke the tool.
 
 You MUST call exactly one transfer tool at the end of your message when handing off.
 
+## Memory
+使用memory_manager技能来管理memory
+
 ## Constraints
 1. For shell operations, only Windows CMD syntax is allowed; Bash/Linux syntax is strictly prohibited.
 2. Do not create any virtual environment, nor install or download any packages or libraries.

@@ -1,11 +1,14 @@
 """Session manager — routes Feishu messages to the right SwarmSession.
 
 One SwarmSession per chat_id. Creates on first message, injects replies
-on subsequent messages, terminates on command.
+on subsequent messages, terminates on command, and supports session resume.
 """
 from __future__ import annotations
 
+import json
 import logging
+import re
+from pathlib import Path
 
 from infrastructure.config import HarnessConfig, LlmConfig
 from infrastructure.feishu_bot import FeishuBotService
@@ -14,6 +17,9 @@ from infrastructure.skills.registry import SkillRegistry
 from infrastructure.swarm_session import SwarmSession, _TERMINATE_KEYWORDS
 
 logger = logging.getLogger(__name__)
+
+_RESUME_PATTERN = re.compile(r"^harness\s+resume\s+([0-9a-fA-F]{8})$", re.IGNORECASE)
+_LIST_PATTERN = re.compile(r"^harness\s+list$", re.IGNORECASE)
 
 
 class SessionManager:
@@ -54,9 +60,11 @@ class SessionManager:
     ) -> None:
         """Route an incoming Feishu message.
 
-        - New chat or no active session → create session with text as prompt
         - Terminate keyword → kill the session
-        - Otherwise → inject reply into active session
+        - "harness resume <id>" → resume a saved session
+        - "harness list" → list resumable sessions
+        - Active session → inject reply
+        - Otherwise → create new session with text as prompt
         """
         stripped = text.strip()
 
@@ -69,6 +77,18 @@ class SessionManager:
                 logger.info("Session terminated: chat_id=%s", chat_id)
             else:
                 await self._bot.send_text(chat_id, "当前没有进行中的任务")
+            return
+
+        # Check for resume command: "harness resume <session_id>"
+        resume_match = _RESUME_PATTERN.match(stripped)
+        if resume_match:
+            session_id = resume_match.group(1).lower()
+            await self._resume_session(chat_id, session_id)
+            return
+
+        # Check for list command: "harness list"
+        if _LIST_PATTERN.match(stripped):
+            await self._list_sessions(chat_id)
             return
 
         session = self._sessions.get(chat_id)
@@ -106,6 +126,91 @@ class SessionManager:
         self._sessions[chat_id] = session
         session.start(prompt)
         await self._bot.send_text(chat_id, f"🚀 任务已启动: {prompt[:100]}")
+
+    async def _resume_session(self, chat_id: str, session_id: str) -> None:
+        """Load a saved session snapshot and resume it in a new SwarmSession."""
+        snapshot_path = Path(self._session_dir) / f"snapshot_{session_id}.json"
+        if not snapshot_path.exists():
+            await self._bot.send_text(chat_id, f"未找到会话ID: {session_id}")
+            return
+
+        try:
+            with open(snapshot_path, "r", encoding="utf-8") as f:
+                snapshot_data = json.load(f)
+        except (json.JSONDecodeError, OSError) as e:
+            logger.error("Failed to load session snapshot %s: %s", session_id, e)
+            await self._bot.send_text(chat_id, "会话数据损坏，无法恢复")
+            return
+
+        saved_messages = snapshot_data.get("messages", [])
+        original_prompt = snapshot_data.get("prompt", "(恢复的会话)")
+        original_status = snapshot_data.get("status", "unknown")
+
+        if not saved_messages:
+            await self._bot.send_text(chat_id, "会话无消息记录，无法恢复")
+            return
+
+        # Clean up any existing session for this chat_id
+        old = self._sessions.get(chat_id)
+        if old:
+            old.terminate()
+            await old._channel.stop()
+
+        # Create new session and start in resume mode
+        session = SwarmSession(
+            chat_id=chat_id,
+            bot=self._bot,
+            mcp_manager=self._mcp_manager,
+            llm_config=self._llm_config,
+            harness_config=self._harness_config,
+            skill_registry=self._skill_registry,
+            session_dir=self._session_dir,
+        )
+        self._sessions[chat_id] = session
+        session.start_resume(saved_messages, original_prompt)
+
+        msg_count = len(saved_messages)
+        await self._bot.send_text(
+            chat_id,
+            f"🔄 会话已恢复 (ID: {session_id}, 之前状态: {original_status})\n"
+            f"已加载 {msg_count} 条消息，继续执行...",
+        )
+        logger.info(
+            "Session resumed: chat_id=%s, session_id=%s, messages=%d",
+            chat_id, session_id, msg_count,
+        )
+
+    async def _list_sessions(self, chat_id: str) -> None:
+        """List all available session snapshots."""
+        session_dir = Path(self._session_dir)
+        if not session_dir.exists():
+            await self._bot.send_text(chat_id, "暂无保存的会话")
+            return
+
+        snapshots = []
+        for path in sorted(session_dir.glob("snapshot_*.json"), reverse=True):
+            try:
+                with open(path, "r", encoding="utf-8") as f:
+                    data = json.load(f)
+                sid = data.get("session_id", "?")
+                ts = data.get("timestamp", "?")
+                status = data.get("status", "?")
+                msg_count = len(data.get("messages", []))
+                prompt_preview = data.get("prompt", "")[:50]
+                snapshots.append(f"- {sid} | {status} | {ts[:19]} | {msg_count}条消息 | {prompt_preview}")
+            except Exception:
+                continue
+
+        if not snapshots:
+            await self._bot.send_text(chat_id, "暂无保存的会话")
+            return
+
+        header = f"📋 找到 {len(snapshots)} 个会话:\n\n"
+        # Limit to last 10 sessions to avoid message too long
+        body = "\n".join(snapshots[:10])
+        if len(snapshots) > 10:
+            body += f"\n\n... 还有 {len(snapshots) - 10} 个会话"
+        await self._bot.send_text(chat_id, header + body)
 
     def terminate_all(self) -> None:
         """Terminate all active sessions (for graceful shutdown)."""

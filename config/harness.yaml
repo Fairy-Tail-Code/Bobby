@@ -1,8 +1,7 @@
 harness:
   evaluation:
-    max_rounds: 500
     score_threshold: 7
-    dimensions:
+    dimensions:   #
       - name: design_quality
         weight: high
         threshold: 7
@@ -30,9 +29,10 @@ harness:
     # Level 4: Auto Compact — LLM summarization when approaching token limit
     max_tokens: 200000
     auto_compact_enabled: true
+    max_rounds: 500
 
   hitl:
-    mode: email              # "stdin" | "email" | "dingtalk" | "feishu"
+    mode: email              # "stdin" | "email" | "dingtalk" | "feishu"  # 这个mode设置不影响server，server只支持飞书，默认也是飞书
     polling_interval: 30     # seconds between polls
     timeout: 3600            # max seconds to wait for a reply
     subject_prefix: "[OpenHarness]"
@@ -40,9 +40,6 @@ harness:
   acpx:
     agent: claude             # acpx agent: claude / codex / gemini
     default_timeout: 600      # 单次任务超时（秒）
-    max_sessions: 3           # 最大并行会话数
+    max_sessions: 1           # 最大并行会话数
   session:
     session_dir: session/
-
-  hitl:
-    mode: feishu
