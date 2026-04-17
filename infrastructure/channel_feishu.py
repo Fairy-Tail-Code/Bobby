@@ -107,6 +107,20 @@ class FeishuChannel(ChannelAdapter):
         asyncio.set_event_loop(new_loop)
         ws_mod.loop = new_loop  # override the module-level loop
 
+        # Monkey-patch _handle_data_frame to log all incoming data frames
+        _orig_handle = self._ws_client._handle_data_frame
+        async def _patched_handle(frame):
+            try:
+                hs = frame.headers
+                from lark_oapi.ws.client import _get_by_key
+                from lark_oapi.ws.const import HEADER_TYPE
+                type_ = _get_by_key(hs, HEADER_TYPE)
+                logger.info("Feishu WS data frame received, type=%s, payload_len=%d", type_, len(frame.payload) if frame.payload else 0)
+            except Exception:
+                pass
+            return await _orig_handle(frame)
+        self._ws_client._handle_data_frame = _patched_handle
+
         try:
             self._ws_client.start()
         except Exception:
@@ -162,11 +176,8 @@ class FeishuChannel(ChannelAdapter):
 
     # -------------------------------------------------------- event handler
 
-    def _on_message(self, ctx, conf, event):
-        """Called by Feishu SDK when a message is received (runs in WS thread).
-
-        The callback signature matches ``register_p2_im_message_receive_v1``.
-        """
+    def _on_message(self, event):
+        """Called by Feishu SDK when a message is received (runs in WS thread)."""
         logger.info("Feishu _on_message triggered, event type: %s", type(event).__name__)
         try:
             sender = event.event.sender
