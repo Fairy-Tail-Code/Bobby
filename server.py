@@ -16,7 +16,7 @@ from infrastructure.config import (
     load_llm_config, load_mcp_config, load_harness_config,
     load_feishu_config,
 )
-from infrastructure.feishu_bot import FeishuBotService, set_main_loop
+from infrastructure.feishu_bot import FeishuBotService
 from infrastructure.mcp.manager import McpManager
 from infrastructure.session_manager import SessionManager
 from infrastructure.skills.registry import SkillRegistry
@@ -40,15 +40,12 @@ async def main() -> None:
     harness_config = load_harness_config(CONFIG_DIR)
     feishu_config = load_feishu_config(PROJECT_DIR)
 
-    # 2. Set main event loop reference for WS thread → main loop bridge
-    set_main_loop(asyncio.get_running_loop())
-
-    # 3. Initialize skill registry
+    # 2. Initialize skill registry
     skills_dir = PROJECT_DIR / "skills"
     skill_registry = SkillRegistry(roots=[skills_dir])
     logger.info("Available skills: %s", [s.name for s in skill_registry.list_skills()])
 
-    # 4. Connect MCP servers
+    # 3. Connect MCP servers
     logger.info("Connecting to MCP servers...")
     mcp_manager = McpManager()
     connected_servers: list[str] = []
@@ -66,12 +63,12 @@ async def main() -> None:
             issue.skill_name, issue.missing_servers, issue.missing_servers,
         )
 
-    # 5. Get session dir from config
+    # 4. Get session dir from config
     config_path = CONFIG_DIR / "harness.yaml"
     config_data = yaml.safe_load(config_path.read_text(encoding="utf-8")) if config_path.exists() else {}
     session_dir = config_data.get("harness", {}).get("session", {}).get("session_dir", "session")
 
-    # 6. Create SessionManager (bot set later)
+    # 5. Create SessionManager (bot set later)
     session_manager = SessionManager(
         bot=None,
         mcp_manager=mcp_manager,
@@ -81,13 +78,14 @@ async def main() -> None:
         session_dir=session_dir,
     )
 
-    # 7. Create and start FeishuBotService
+    # 6. Create and start FeishuBotService
     bot = FeishuBotService(
         app_id=feishu_config.app_id,
         app_secret=feishu_config.app_secret,
         on_message=session_manager.handle_message,
     )
     session_manager._bot = bot
+    bot.set_main_loop(asyncio.get_running_loop())
     bot.start()
 
     logger.info(
@@ -96,7 +94,7 @@ async def main() -> None:
         connected_servers,
     )
 
-    # 8. Run forever until interrupted
+    # 7. Run forever until interrupted
     try:
         stop_event = asyncio.Event()
         loop = asyncio.get_running_loop()
