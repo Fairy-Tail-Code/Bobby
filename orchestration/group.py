@@ -35,26 +35,29 @@ def run_swarm(
 
 
 async def arun_swarm(
-    initial_agent: ConversableAgent,
-    agents: list[ConversableAgent],
-    prompt: Union[str, List[Dict]],
-    harness_config: HarnessConfig,
-    context_variables=None,
+        initial_agent: ConversableAgent,
+        agents: list[ConversableAgent],
+        prompt: Union[str, List[Dict]],
+        harness_config: HarnessConfig,
+        context_variables=None,  # todo
 ):
-    """Run a group chat with handoffs asynchronously.
-
-    Uses DefaultPattern which respects agent.handoffs for transitions.
-
-    Returns (chat_result, context_variables, last_speaker).
-    """
     pattern = DefaultPattern(
         initial_agent=initial_agent,
         agents=agents,
         context_variables=context_variables,
     )
-    return await a_initiate_group_chat(
+
+    # 直接调用 a_initiate_group_chat 获取所有返回值
+    chat_result, context_variables, last_speaker = await a_initiate_group_chat(
         pattern=pattern,
         messages=prompt,
         max_rounds=harness_config.max_rounds,
-
     )
+
+    # 从 pattern 中获取 manager（需要先调用 prepare_group_chat）
+    _, _, _, _, _, _, _, manager, _, _, _, _, _ = pattern.prepare_group_chat(
+        max_rounds=harness_config.max_rounds,
+        messages=prompt,
+    )
+
+    return chat_result, context_variables, last_speaker, manager

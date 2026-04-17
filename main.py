@@ -132,13 +132,14 @@ async def run(prompt: str) -> None:
             prompt[:100],  # 只打印前100字符避免日志过长
         )
         # arun_swarm开始循环
-        chat_result, context, last_speaker = await arun_swarm(
+        chat_result, context, last_speaker,manager = await arun_swarm(
             initial_agent=agents_dict["pm"],  # 从规划器开始
             agents=agents_list,  # 参与群聊的所有智能体
             prompt=prompt,  # 用户输入提示词
             harness_config=harness_config,  # 配置
 
         )
+
         # 保存session
         with open(session_file, "w", encoding="utf-8") as f:
             json.dump(chat_result.chat_history, f, ensure_ascii=False, indent=2)

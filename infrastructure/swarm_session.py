@@ -14,7 +14,7 @@ from datetime import datetime
 from pathlib import Path
 
 from autogen import ConversableAgent
-from autogen.agentchat.group.patterns import AutoPattern
+from autogen.agentchat.group.patterns import AutoPattern,DefaultPattern
 from autogen.agentchat.group.multi_agent_chat import a_initiate_group_chat
 
 from agents.factory import (
@@ -31,6 +31,7 @@ from infrastructure.config import HarnessConfig, LlmConfig
 from infrastructure.feishu_bot import FeishuBotService
 from infrastructure.mcp.manager import McpManager
 from infrastructure.skills.registry import SkillRegistry
+
 
 logger = logging.getLogger(__name__)
 
@@ -102,7 +103,8 @@ class SwarmSession:
                 if key in self._agents:
                     agents_list.append(self._agents[key])
 
-            pattern = AutoPattern(
+            # todo （优先级低）对比DefaultPattern和AutoPattern的区别是什么。
+            pattern = DefaultPattern(
                 initial_agent=self._agents["pm"],
                 agents=agents_list,
             )
@@ -184,21 +186,21 @@ class SwarmSession:
         return asyncio.create_task(self._monitor_messages())
 
     async def _monitor_messages(self) -> None:
-        """Poll agent message histories and push new messages to Feishu."""
-        seen_counts: dict[str, int] = {}
+        """Poll PM agent's message history and push new messages to Feishu.
+
+        In group chat, every agent receives a full copy of all messages,
+        so monitoring one agent is sufficient and avoids duplicates.
+        """
+        seen = 0
 
         while not self._terminated:
-            for agent_key in ("pm", "planner", "generator", "evaluator"):
-                agent = self._agents.get(agent_key)
-                if not agent:
-                    continue
-                for other_agent, msgs in agent.chat_messages.items():
-                    pair_key = f"{agent_key}:{getattr(other_agent, 'name', str(other_agent))}"
-                    prev_count = seen_counts.get(pair_key, 0)
-                    new_msgs = msgs[prev_count:]
+            pm = self._agents.get("pm")
+            if pm:
+                for other_agent, msgs in pm.chat_messages.items():
+                    new_msgs = msgs[seen:]
                     for msg in new_msgs:
                         await self._push_message_to_feishu(msg)
-                    seen_counts[pair_key] = len(msgs)
+                    seen = len(msgs)
             await asyncio.sleep(1)
 
     async def _push_message_to_feishu(self, msg: dict) -> None:

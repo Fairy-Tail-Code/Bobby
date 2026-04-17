@@ -25,3 +25,6 @@ def create_termination_check() -> Callable[[dict[str, Any]], bool]:
         return False
 
     return is_termination_msg
+
+
+# todo 添加中止当前ReAct的能力

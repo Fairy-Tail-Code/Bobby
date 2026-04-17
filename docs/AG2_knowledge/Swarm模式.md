@@ -74,3 +74,45 @@ ctx.set("retries", 0)
 3. **AgentTarget 是必须的**：`OnCondition(target=agent)` 报 Pydantic 错误
 4. **StringLLMCondition 是必须的**：`OnCondition(condition="string")` 报 Pydantic 错误
 5. **返回值是三元组**：`(ChatResult, ContextVariables, ConversableAgent)`
+
+## register_reply 的重要限制（2026-04-17 发现）
+
+`register_reply` 的 hook 在 agent **生成回复之前**触发，不是之后。
+
+### 执行流程
+
+```python
+# conversable_agent.py a_generate_reply():
+for reply_func_tuple in self._reply_func_list:
+    if self._match_trigger(trigger, sender):
+        final, reply = reply_func(recipient, messages, sender, config)
+        if final:
+            return reply
+# 所有 hook 都返回 (False, None) 后，继续执行默认的 LLM 回复
+```
+
+### 关键事实
+
+1. **`messages` 是完整对话历史**（`self._oai_messages[sender]`），不是新消息
+2. **`messages[-1]` 是触发消息**（上一个 agent 的输出），不是当前 agent 的输出
+3. **返回 `(False, None)` 继续下一个 hook**，返回 `(True, reply)` 终止并使用该回复
+4. **没有 post-reply hook**：AG2 不提供任何在 agent 生成回复之后触发的回调
+
+### 对消息拦截的影响
+
+如果用 `register_reply` 在 position=0 拦截消息并推送到飞书：
+- 每个 agent 的 hook 推送的是**收到的消息**（上一个 agent 的输出），不是自己的输出
+- 同一条消息被多个 agent 的 hook 重复推送
+- Agent 的实际输出永远不会被捕获
+
+### 替代方案
+
+**可行但有限**：
+- 轮询 `agent.chat_messages` 检测新增消息（当前采用的方案）
+- Subclass `GroupChat` 重写 `append` 方法
+- 手动实现 group chat 循环替代 `a_initiate_group_chat`
+
+**不可行**：
+- `process_all_messages_before_reply` — 也是 pre-processing
+- `update_agent_state_before_reply` — 也是 pre-processing
+- `send()` 方法 hook — group chat 中消息由 GroupChatManager 管理，不走 agent.send()
