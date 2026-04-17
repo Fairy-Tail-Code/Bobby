@@ -12,7 +12,6 @@ import logging
 import re
 from datetime import datetime
 from pathlib import Path
-from typing import Any
 
 from autogen import ConversableAgent
 from autogen.agentchat.group.patterns import AutoPattern
@@ -88,10 +87,10 @@ class SwarmSession:
         logger.info("SwarmSession started: chat_id=%s", self.chat_id)
 
     async def _run(self) -> None:
-        """Build agents, set up hooks, and run swarm."""
+        """Build agents, start message monitor, and run swarm."""
         try:
             self._agents = self._create_agents()
-            self._register_message_hooks()
+            monitor_task = self._start_message_monitor()
 
             agents_list = [
                 self._agents["pm"],
@@ -113,6 +112,9 @@ class SwarmSession:
                 messages=self._prompt,
                 max_rounds=self._harness_config.max_rounds,
             )
+
+            # Stop the message monitor now that the swarm is done
+            monitor_task.cancel()
 
             # Save session
             self._save_session(result.chat_history)
@@ -177,60 +179,65 @@ class SwarmSession:
 
     # ------------------------------------------------- message interception
 
-    def _register_message_hooks(self) -> None:
-        """Register reply hooks on AI agents to push messages to Feishu."""
-        ai_agents = ["pm", "planner", "generator", "evaluator"]
-        for name in ai_agents:
-            agent = self._agents[name]
-            agent.register_reply(
-                [ConversableAgent, None],
-                self._make_intercept_hook(agent),
-                position=0,
-            )
+    def _start_message_monitor(self) -> asyncio.Task:
+        """Start a background task that monitors agent messages and pushes to Feishu."""
+        return asyncio.create_task(self._monitor_messages())
 
-    def _make_intercept_hook(self, agent: ConversableAgent):
-        """Create a reply hook for a specific agent."""
-        async def hook(
-            recipient: ConversableAgent,
-            messages: list[dict] | None = None,
-            sender: ConversableAgent | None = None,
-            config: Any = None,
-        ) -> tuple[bool, str | dict | None]:
-            if not messages:
-                return False, None
+    async def _monitor_messages(self) -> None:
+        """Poll agent message histories and push new messages to Feishu."""
+        seen_counts: dict[str, int] = {}
 
-            last_msg = messages[-1]
-            content = last_msg.get("content", "")
-            msg_name = last_msg.get("name", agent.name)
+        while not self._terminated:
+            for agent_key in ("pm", "planner", "generator", "evaluator"):
+                agent = self._agents.get(agent_key)
+                if not agent:
+                    continue
+                for other_agent, msgs in agent.chat_messages.items():
+                    pair_key = f"{agent_key}:{getattr(other_agent, 'name', str(other_agent))}"
+                    prev_count = seen_counts.get(pair_key, 0)
+                    new_msgs = msgs[prev_count:]
+                    for msg in new_msgs:
+                        await self._push_message_to_feishu(msg)
+                    seen_counts[pair_key] = len(msgs)
+            await asyncio.sleep(1)
 
-            # Skip empty, transfer, terminate messages
-            if not content or not isinstance(content, str):
-                return False, None
-            stripped = content.strip()
-            if not stripped:
-                return False, None
-            if re.match(r"^(Transfer to|TERMINATE|APPROVED|REJECTED)", stripped, re.IGNORECASE):
-                return False, None
+    async def _push_message_to_feishu(self, msg: dict) -> None:
+        """Push a single message to Feishu if it's relevant."""
+        content = msg.get("content", "")
+        role = msg.get("role", "")
+        name = msg.get("name", "")
 
-            # Check for tool calls — show tool name only
-            tool_calls = last_msg.get("tool_calls")
-            if tool_calls:
-                for tc in tool_calls:
-                    fn_name = tc.get("function", {}).get("name", "unknown")
-                    await self._bot.send_text(
-                        self.chat_id,
-                        f"🔧 **{msg_name}** 正在执行工具: `{fn_name}`",
-                    )
-                return False, None
+        # Skip tool responses (they have tool_call_id)
+        if role == "tool":
+            return
 
-            # Regular LLM text output — push to Feishu
-            await self._bot.send_text(
-                self.chat_id,
-                f"【{msg_name}】\n{stripped}",
-            )
-            return False, None
+        # Skip empty content
+        if not content or not isinstance(content, str):
+            return
+        stripped = content.strip()
+        if not stripped:
+            return
 
-        return hook
+        # Skip transfer/terminate messages
+        if re.match(r"^(Transfer to|TERMINATE|APPROVED|REJECTED)", stripped, re.IGNORECASE):
+            return
+
+        # Check for tool calls — show tool name only
+        tool_calls = msg.get("tool_calls")
+        if tool_calls:
+            for tc in tool_calls:
+                fn_name = tc.get("function", {}).get("name", "unknown")
+                await self._bot.send_text(
+                    self.chat_id,
+                    f"🔧 **{name}** 正在执行工具: `{fn_name}`",
+                )
+            return
+
+        # Regular LLM text output
+        await self._bot.send_text(
+            self.chat_id,
+            f"【{name}】\n{stripped}",
+        )
 
     # --------------------------------------------------- reply injection
 
