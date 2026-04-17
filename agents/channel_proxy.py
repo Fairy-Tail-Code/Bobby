@@ -16,6 +16,7 @@ from autogen import UserProxyAgent
 from autogen.io.base import AsyncInputStream
 
 from infrastructure.channel import ChannelAdapter
+from infrastructure.channel_feishu_service import ChannelFeishuService
 
 logger = logging.getLogger(__name__)
 
@@ -70,8 +71,7 @@ class ChannelUserProxyAgent(UserProxyAgent):
     # ------------------------------------------------------------------
 
     async def a_get_human_input(self, prompt: str, *, iostream: AsyncInputStream | None = None) -> str:
-        """Send the agent's question via the channel, then poll for a reply."""
-        # Ensure the channel is connected (idempotent)
+        """Send the agent's question via the channel, then wait for a reply."""
         await self._channel.start()
 
         context = self._get_last_agent_message()
@@ -86,6 +86,11 @@ class ChannelUserProxyAgent(UserProxyAgent):
             self._recipient, self.name, request_id,
         )
 
+        # Use Future-based wait for service mode, polling for legacy mode
+        if isinstance(self._channel, ChannelFeishuService):
+            return await self._channel.wait_reply(request_id, timeout=self._timeout)
+
+        # Legacy polling path (email, dingtalk, old feishu)
         deadline = time.monotonic() + self._timeout
         while time.monotonic() < deadline:
             reply = await self._channel.poll_reply(request_id)
