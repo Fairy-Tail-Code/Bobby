@@ -39,6 +39,7 @@ class FeishuBotService:
         self._app_id = app_id
         self._app_secret = app_secret
         self._on_message = on_message
+        self._main_loop: asyncio.AbstractEventLoop | None = None
         self._lark_client: lark.Client | None = None
         self._ws_client: lark.ws.Client | None = None
         self._ws_thread: threading.Thread | None = None
@@ -77,6 +78,10 @@ class FeishuBotService:
         self._ws_thread.start()
         logger.info("FeishuBotService WS client started")
 
+    def set_main_loop(self, loop: asyncio.AbstractEventLoop) -> None:
+        """Set the main event loop reference for cross-thread coroutine scheduling."""
+        self._main_loop = loop
+
     def _run_ws_in_thread(self) -> None:
         import lark_oapi.ws.client as ws_mod
 
@@ -105,6 +110,11 @@ class FeishuBotService:
             msg_type = getattr(msg, "message_type", "")
 
             if msg_type != "text":
+                if self._main_loop and self._main_loop.is_running():
+                    asyncio.run_coroutine_threadsafe(
+                        self._send_message(chat_id, "text", json.dumps({"text": "暂不支持该消息类型，请发送文字消息。"})),
+                        self._main_loop,
+                    )
                 return
 
             raw = json.loads(msg.content)
@@ -128,7 +138,7 @@ class FeishuBotService:
             )
 
             # Schedule the async callback on the main event loop
-            main_loop = _get_main_loop()
+            main_loop = self._main_loop
             if main_loop and main_loop.is_running():
                 asyncio.run_coroutine_threadsafe(
                     self._on_message(chat_id, open_id, chat_type, text),
@@ -184,17 +194,3 @@ class FeishuBotService:
             )
         else:
             logger.info("Feishu message sent to chat_id=%s", chat_id)
-
-
-# ------------------------------------------------------------------ helpers
-
-_main_loop: asyncio.AbstractEventLoop | None = None
-
-
-def set_main_loop(loop: asyncio.AbstractEventLoop) -> None:
-    global _main_loop
-    _main_loop = loop
-
-
-def _get_main_loop() -> asyncio.AbstractEventLoop | None:
-    return _main_loop
