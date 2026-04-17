@@ -88,6 +88,12 @@ class SessionManager:
 
     async def _create_session(self, chat_id: str, prompt: str) -> None:
         """Create a new SwarmSession and start it."""
+        # Clean up any old completed session
+        old = self._sessions.get(chat_id)
+        if old:
+            old.terminate()
+            await old._channel.stop()
+
         session = SwarmSession(
             chat_id=chat_id,
             bot=self._bot,
