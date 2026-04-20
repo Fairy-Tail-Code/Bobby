@@ -358,7 +358,7 @@ def fetch_git_remote(
 
 
 @git_server.tool(
-    description="Switch to one local or remote-tracking branch in a repository.",
+    description="Switch to one local or remote-tracking branch in a repository. With create=True, idempotent: switches if branch exists, creates if not.",
     annotations=ToolAnnotations(readOnlyHint=False, destructiveHint=False, idempotentHint=False),
 )
 def checkout_git_branch(
@@ -373,9 +373,14 @@ def checkout_git_branch(
     repo_root = _resolve_git_repo_root(repo_path, cwd=cwd)
     normalized_branch_name = _normalize_required_string(branch_name, field_name="branch_name")
     if create:
-        command = ["switch", "-c", normalized_branch_name]
-        if isinstance(start_point, str) and start_point.strip():
-            command.append(start_point.strip())
+        # Idempotent: if branch already exists, just switch to it
+        existing = _run_git_command(repo_root, ["branch", "--list", normalized_branch_name]).stdout.strip()
+        if existing:
+            command = ["switch", normalized_branch_name]
+        else:
+            command = ["switch", "-c", normalized_branch_name]
+            if isinstance(start_point, str) and start_point.strip():
+                command.append(start_point.strip())
     elif track_remote:
         command = ["switch", "--track", "-C", normalized_branch_name, f"origin/{normalized_branch_name}"]
     else:

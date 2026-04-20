@@ -107,11 +107,11 @@ class HitlConfig:
 
 
 @dataclass
-class AcpxConfig:
-    """Configuration for acpx-based CC delegation tool."""
-    agent: str = "claude"        # acpx agent: claude / codex / gemini
+class ClaudeCodeConfig:
+    """Configuration for claude -p based coding delegation."""
+    model: str = ""              # Claude model alias (sonnet, opus, etc.)
     default_timeout: int = 600   # 单次任务超时（秒）
-    max_sessions: int = 3        # 最大并行会话数
+    max_retries: int = 2         # 失败后最大重试次数
 
 
 @dataclass
@@ -122,7 +122,7 @@ class HarnessConfig:
     tech_stack: dict[str, str] = field(default_factory=dict)
     context: ContextConfig = field(default_factory=ContextConfig)
     hitl: HitlConfig = field(default_factory=HitlConfig)
-    acpx: AcpxConfig = field(default_factory=AcpxConfig)
+    acpx: ClaudeCodeConfig = field(default_factory=ClaudeCodeConfig)
 
 
 def _load_yaml(path: Path) -> dict:
@@ -200,11 +200,11 @@ def load_harness_config(config_dir: Path) -> HarnessConfig:
         tech_stack=raw.get("tech_stack", {}),
         context=context,
         hitl=hitl,
-        acpx=AcpxConfig(
-            agent=acpx_raw.get("agent", "claude"),
+        acpx=ClaudeCodeConfig(
+            model=acpx_raw.get("model", ""),
             default_timeout=acpx_raw.get("default_timeout", 600),
-            max_sessions=acpx_raw.get("max_sessions", 3),
-        ) if (acpx_raw := raw.get("acpx", {})) else AcpxConfig(),
+            max_retries=acpx_raw.get("max_retries", 2),
+        ) if (acpx_raw := raw.get("acpx", {})) else ClaudeCodeConfig(),
     )
 
 

@@ -6,6 +6,7 @@ readme = "README.md"
 requires-python = ">=3.12"
 dependencies = [
     "ag2[openai]>=0.7.0",
+    "filelock>=3.29.0",
     "lark-oapi>=1.5.3",
     "mcp>=1.27.0",
     "pip>=26.0.1",

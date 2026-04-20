@@ -282,3 +282,31 @@ AG2 将 handoff 内部工具注册给所有 agent，包括 `terminate_command`�
 
 - `infrastructure/swarm_session.py` — 新增 `SessionSnapshot` 数据类；新增 `start_resume()` 方法；重构 `_run()` 支持新/恢复双模式；`_save_session()` 替换为 `_save_snapshot()`；新增 `_extract_messages_from_agents()` 和 `_strip_terminate_from_last_message()`
 - `infrastructure/session_manager.py` — 新增 `harness resume` 和 `harness list` 命令解析；新增 `_resume_session()` 和 `_list_sessions()` 方法
+
+## 2026-04-20
+
+### 架构决策
+
+#### 群聊用户识别
+
+- **背景**：原系统中群聊里任何人 @机器人 都能回复 agent 的 HITL 问题，无法区分回复者身份。如果 agent 问了用户 A 一个问题，用户 B @机器人回复也会被注入。
+- **方案**：记录 session 发起者的 `open_id`，群聊中只接受发起者的回复。
+- **实现**：
+  - `SwarmSession` 新增 `owner_open_id` 属性，由 `SessionManager` 在创建 session 时设置
+  - `SessionManager.handle_message` 在群聊模式下检查 `open_id != session.owner_open_id`，拒绝非发起者回复
+  - 单聊（p2p）不限制——只有一个用户
+  - 恢复会话不限制 owner（resume 不绑定原用户）
+
+#### Workspace 文件操作加锁（FileLock）
+
+- **背景**：当前单进程架构下 MCP 工具调用是串行的（asyncio），无冲突。但多进程架构下多个 worker 进程会各自启动 MCP 子进程，对同一文件并发读写会导致数据丢失。
+- **方案**：使用 `filelock` 库给 workspace MCP server 的所有写操作加文件锁。
+- **锁策略**：每个文件一个锁（锁文件为 `.{filename}.lock`），放在目标文件同目录下。FileLock 默认可重入（同进程内嵌套加锁不死锁）。
+- **加锁的操作**：`write_file`、`delete_file`、`move_file`、`apply_patch`（包括 add/update/delete hunks）
+
+### 文件变更清单
+
+- `infrastructure/swarm_session.py` — 新增 `owner_open_id` 属性
+- `infrastructure/session_manager.py` — `_create_session` 接收 `open_id` 和 `chat_type`，`handle_message` 增加群聊用户校验
+- `infrastructure/mcp_servers/workspace_server.py` — 引入 `filelock`，新增 `_file_lock()` 辅助函数，`write_file`/`delete_file`/`move_file`/`apply_patch`/`_write_patch_lines` 加锁
+- `pyproject.toml` — 新增 `filelock>=3.29.0` 依赖

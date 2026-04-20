@@ -37,9 +37,9 @@ harness:
     timeout: 3600            # max seconds to wait for a reply
     subject_prefix: "[OpenHarness]"
 
-  acpx:
-    agent: claude             # acpx agent: claude / codex / gemini
+  acpx:                       # claude -p delegation config (field kept as 'acpx' for backwards compat)
+    model: sonnet             # Claude model alias (sonnet, opus, etc.)
     default_timeout: 600      # 单次任务超时（秒）
-    max_sessions: 1           # 最大并行会话数
+    max_retries: 2            # 失败后最大重试次数
   session:
     session_dir: session/

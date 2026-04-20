@@ -1,77 +1,98 @@
 ---
 name: claude-code
-description: Claude Code integration skill — provides AI-assisted coding best practices, documentation queries, workflow guidance, and subagent coordination for high-quality code delivery.
-summary: "Apply Claude Code best practices, documentation patterns, and workflow guidance during code implementation."
+description: Delegate coding tasks to Claude Code via the claude_code MCP server. Use for writing code, fixing bugs, refactoring, and any implementation work that should be handled by a dedicated coding subprocess.
+summary: "Delegate coding tasks to Claude Code via claude -p for implementation, bugfixes, and refactoring."
 mcp_servers:
+  - claude_code
   - workspace
-  - shell
 ---
 
-# Claude Code Integration
+# Claude Code Delegation
 
-Provides Claude Code documentation, best practices, and workflow guidance to improve code delivery quality.
+Use the `claude_code` MCP server to delegate coding tasks to Claude Code (`claude -p`). This replaces acpx and avoids its rate-limiting issues.
 
-## Documentation Topics
+## When to use
 
-The following knowledge areas are available for consultation during implementation:
+Use this skill when you need another AI to perform coding work — writing files, fixing bugs, refactoring, running code analysis — that you cannot or should not do yourself.
 
-### Quickstart
-- Claude Code CLI installation and basic usage
-- Project setup and configuration patterns
-- Environment and IDE integration
+## Available tools
 
-### Best Practices
-- **Be Specific**: Clear, detailed prompts get better results
-- **Iterate**: AI assistance is a dialogue, not a magic button
-- **Review Always**: Always review AI-generated code
-- **Test Thoroughly**: AI can make logical errors
-- **Understand First**: Don't apply code you don't understand
+### `claude_prompt`
 
-### Common Workflows
-1. **Bug Fixing**: Reproduce → Understand → Diagnose → Fix → Verify → Document
-2. **Feature Development**: Plan → Design → Prototype → Iterate → Test → Review → Merge
-3. **Code Review**: Scan → Analyze → Test → Discuss → Approve
-4. **Refactoring**: Catalog → Understand → Plan → Execute → Verify → Document
+One-shot prompt execution. Returns the full Claude Code output.
 
-### Settings & Configuration
-- CLI settings and environment variables (`ANTHROPIC_API_KEY`, `CLAUDE_CODE_DIR`)
-- Configuration files (`~/.claude/settings.json`, `CLAUDE.md`)
-- MCP server configuration (`~/.claude/mcp.json`)
-- Model selection and context length tuning
+**Parameters:**
+- `prompt` (required): The coding task description.
+- `cwd`: Working directory for Claude Code. Defaults to the server's cwd.
+- `model`: Claude model to use (e.g., `sonnet`, `opus`). Defaults to Claude Code's default.
+- `timeout_ms`: Execution timeout in milliseconds. Default 600000 (10 min). Increase for large tasks.
+- `allowed_tools`: List of tool names Claude Code is allowed to use (e.g., `["Bash", "Edit", "Read"]`).
+- `disallowed_tools`: List of tool names to deny.
+- `append_system_prompt`: Extra system prompt appended to Claude Code's default.
 
-### Troubleshooting
-- Connection issues: check API key, network, Anthropic status
-- Performance: reduce context size, use faster models for simple tasks
-- Code quality: specify language, provide style guide, verify dependencies
+**Example usage (conceptual):**
+```
+claude_prompt(
+  prompt="Implement a FastAPI /health endpoint in server.py",
+  cwd="C:\\project",
+  timeout_ms=600000,
+)
+```
 
-### Subagents & Agent Teams
-- Subagent creation for parallel execution of specialized tasks
-- Agent team coordination for large-scale refactoring and multi-component features
-- Resource constraints and concurrent subagent limits
+### `claude_prompt_file`
 
-### MCP (Model Context Protocol)
-- Standardized connection to external tools and data sources
-- Common servers: filesystem, database, git
-- Configuration and security best practices
+Same as `claude_prompt` but reads the prompt from a file. Use for long, detailed prompts that would exceed shell argument limits.
 
-### Plugins & Extensions
-- MCP servers for enhanced capabilities
-- IDE integrations (VS Code, JetBrains, Neovim)
-- Custom plugin creation
+**Parameters:** Same as `claude_prompt` except `prompt` is replaced by `file_path`.
 
-## Execution Rules
+**Example:**
+```
+claude_prompt_file(
+  file_path="C:\\project\\.tasks\\task_backend.md",
+  cwd="C:\\project",
+  timeout_ms=3600000,
+)
+```
 
-When applying Claude Code guidance during code generation:
-- Follow the best practices for prompt clarity and specificity
-- Use the recommended workflow patterns (bug fix, feature dev, refactoring)
-- Apply security best practices: never hardcode secrets, use environment variables
-- Break complex tasks into smaller, well-defined steps
-- Always write tests for generated code and verify edge cases
-- Maintain consistent coding standards and document AI-assisted decisions
-- When scaffolding, keep it minimal — only what is needed to build, run, test, and extend
+## Task delegation best practices
+
+### Prompt structure
+
+Each prompt should include:
+1. **Goal**: What to implement or fix
+2. **File paths**: Which files are involved (if known)
+3. **Constraints**: Tech stack, naming conventions, what NOT to do
+4. **Acceptance criteria**: How to verify the task is complete
+
+### Prompt length
+
+- Short tasks (< 500 words): use `claude_prompt` directly.
+- Long tasks (detailed specs, multi-file instructions): write prompt to a temp file, then use `claude_prompt_file`.
+
+### Timeout guidelines
+
+| Task type | Recommended timeout |
+|---|---|
+| Small fix / single file | 300s (5 min) |
+| Feature implementation | 600s (10 min) |
+| Multi-file refactor | 1800s (30 min) |
+| Large scaffolding | 3600s (1 hour) |
+
+### Working directory
+
+Always set `cwd` to the project root so Claude Code can discover CLAUDE.md and project context.
+
+## Execution rules
+
+- Always verify Claude Code's output before reporting completion. Use workspace tools (`read_file`, `list_files`) to inspect the result.
+- If Claude Code reports an error, read the stderr output and retry with a refined prompt if appropriate.
+- For multi-step work, break it into sequential calls — each with a clear, focused prompt.
+- Never edit code yourself when this skill is available. Delegate all coding to Claude Code.
+- Use `append_system_prompt` to inject project-specific conventions when needed.
 
 ## Return
 
-- Code changes following Claude Code best practices
-- Documented assumptions and follow-up items
-- Summary of patterns applied and validation performed
+- The Claude Code output (stdout)
+- Whether execution succeeded (`ok` field)
+- Any error output (stderr)
+- Verification notes after inspecting the result with workspace tools

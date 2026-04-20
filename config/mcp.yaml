@@ -52,3 +52,9 @@ mcp_servers:
     command: uv
     args: ["run", "python", "-m", "infrastructure.mcp_servers.gitee_server"]
     startup_timeout: 30
+
+  claude_code:
+    transport: stdio
+    command: uv
+    args: ["run", "python", "-m", "infrastructure.mcp_servers.claude_code_server"]
+    startup_timeout: 10

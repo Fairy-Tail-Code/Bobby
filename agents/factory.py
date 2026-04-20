@@ -44,10 +44,11 @@ PLANNER_SKILLS = [
     "repo-surveyor",
     "fullstack-analyst",
     "backend-analyst",
+    "git-operator",
 ]
 
 GENERATOR_SKILLS = [
-    "acpx",
+    "claude-code",
     "backend-delivery",
     "frontend-delivery",
     "bug-fixer",
@@ -67,8 +68,8 @@ EVALUATOR_SKILLS = [
 
 # MCP server assignments per agent (must cover all MCP dependencies declared in assigned skills)
 PM_MCP_SERVERS = ["workspace", "shell"]
-PLANNER_MCP_SERVERS = ["workspace", "shell"]
-GENERATOR_MCP_SERVERS = ["shell", "git", "workspace", "browser", "docker", "database"]
+PLANNER_MCP_SERVERS = ["workspace", "shell", "git"]
+GENERATOR_MCP_SERVERS = ["shell", "git", "workspace", "browser", "docker", "database", "claude_code"]
 EVALUATOR_MCP_SERVERS = ["browser", "shell", "http_api", "workspace"]
 
 

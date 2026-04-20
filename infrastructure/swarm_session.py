@@ -99,6 +99,7 @@ class SwarmSession:
         self._prompt: str = ""
         self._is_resume: bool = False
         self._resume_messages: list[dict] = []
+        self.owner_open_id: str | None = None  # Session creator, set by SessionManager
 
     @property
     def is_running(self) -> bool:

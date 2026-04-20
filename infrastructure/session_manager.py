@@ -94,6 +94,13 @@ class SessionManager:
         session = self._sessions.get(chat_id)
 
         if session and session.is_running:
+            # Group chat: only session creator can reply
+            if chat_type == "group" and session.owner_open_id and open_id != session.owner_open_id:
+                await self._bot.send_text(
+                    chat_id,
+                    "只有任务发起者可以回复，请联系发起者或发送"终止"结束任务。",
+                )
+                return
             # Active session — inject user reply
             injected = await session.inject_reply(stripped)
             if not injected:
@@ -104,9 +111,9 @@ class SessionManager:
                 )
         else:
             # No active session — create one with user's message as prompt
-            await self._create_session(chat_id, stripped)
+            await self._create_session(chat_id, stripped, open_id=open_id, chat_type=chat_type)
 
-    async def _create_session(self, chat_id: str, prompt: str) -> None:
+    async def _create_session(self, chat_id: str, prompt: str, *, open_id: str = "", chat_type: str = "p2p") -> None:
         """Create a new SwarmSession and start it."""
         # Clean up any old completed session
         old = self._sessions.get(chat_id)
@@ -123,6 +130,9 @@ class SessionManager:
             skill_registry=self._skill_registry,
             session_dir=self._session_dir,
         )
+        # Record session owner for group chat access control
+        if chat_type == "group" and open_id:
+            session.owner_open_id = open_id
         self._sessions[chat_id] = session
         session.start(prompt)
         await self._bot.send_text(chat_id, f"🚀 任务已启动: {prompt[:100]}")
@@ -156,7 +166,7 @@ class SessionManager:
             old.terminate()
             await old._channel.stop()
 
-        # Create new session and start in resume mode
+        # Create new session and start in resume mode (no owner check for resume)
         session = SwarmSession(
             chat_id=chat_id,
             bot=self._bot,

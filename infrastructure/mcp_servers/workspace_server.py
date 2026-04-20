@@ -8,6 +8,7 @@ from typing import Any
 
 from mcp.server.fastmcp import FastMCP
 from mcp.types import ToolAnnotations
+from filelock import FileLock
 
 
 workspace_server = FastMCP("openharness-workspace", log_level="ERROR")
@@ -34,6 +35,12 @@ class WorkspacePath:
 def build_workspace_server() -> FastMCP:
     """Return the configured workspace MCP server instance."""
     return workspace_server
+
+
+def _file_lock(path: Path) -> FileLock:
+    """Return a FileLock for the given path (lock file lives alongside it)."""
+    lock_path = path.parent / f".{path.name}.lock"
+    return FileLock(str(lock_path))
 
 
 @workspace_server.tool(
@@ -196,9 +203,10 @@ def write_file(
     resolved = _resolve_workspace_path(path, cwd=cwd)
     if create_dirs:
         resolved.path.parent.mkdir(parents=True, exist_ok=True)
-    file_mode = "a" if append else "w"
-    with resolved.path.open(file_mode, encoding="utf-8") as output_file:
-        output_file.write(content)
+    with _file_lock(resolved.path):
+        file_mode = "a" if append else "w"
+        with resolved.path.open(file_mode, encoding="utf-8") as output_file:
+            output_file.write(content)
     return {
         "ok": True,
         "path": _render_relative_path(resolved.path, resolved.root),
@@ -256,7 +264,8 @@ def delete_file(path: str, cwd: str | None = None) -> dict[str, Any]:
     resolved = _resolve_workspace_path(path, cwd=cwd)
     if not resolved.path.is_file():
         raise ValueError(f"Path '{resolved.path}' is not a file.")
-    resolved.path.unlink()
+    with _file_lock(resolved.path):
+        resolved.path.unlink()
     return {
         "ok": True,
         "path": _render_relative_path(resolved.path, resolved.root),
@@ -284,7 +293,8 @@ def move_file(
         raise ValueError(f"Path '{resolved_source.path}' does not exist.")
     if create_dirs:
         resolved_destination.path.parent.mkdir(parents=True, exist_ok=True)
-    resolved_source.path.replace(resolved_destination.path)
+    with _file_lock(resolved_source.path):
+        resolved_source.path.replace(resolved_destination.path)
     return {
         "ok": True,
         "source_path": _render_relative_path(resolved_source.path, resolved_source.root),
@@ -328,22 +338,24 @@ def apply_workspace_patch(patch: str, cwd: str | None = None) -> dict[str, Any]:
             target_path = _resolve_workspace_path(operation.path, cwd=str(root)).path
             if not target_path.exists():
                 raise ValueError(f"Patch delete target '{target_path}' does not exist.")
-            target_path.unlink()
+            with _file_lock(target_path):
+                target_path.unlink()
             changed_files.append(_render_relative_path(target_path, root))
             continue
 
         source_path = _resolve_workspace_path(operation.path, cwd=str(root)).path
         if not source_path.exists():
             raise ValueError(f"Patch update target '{source_path}' does not exist.")
-        original_lines = source_path.read_text(encoding="utf-8").splitlines()
-        updated_lines = _apply_patch_hunks(original_lines, operation.hunks, str(source_path))
-        destination_path = source_path
-        if operation.move_to is not None:
-            destination_path = _resolve_workspace_path(operation.move_to, cwd=str(root)).path
-            destination_path.parent.mkdir(parents=True, exist_ok=True)
-        _write_patch_lines(destination_path, updated_lines)
-        if operation.move_to is not None and destination_path != source_path:
-            source_path.unlink()
+        with _file_lock(source_path):
+            original_lines = source_path.read_text(encoding="utf-8").splitlines()
+            updated_lines = _apply_patch_hunks(original_lines, operation.hunks, str(source_path))
+            destination_path = source_path
+            if operation.move_to is not None:
+                destination_path = _resolve_workspace_path(operation.move_to, cwd=str(root)).path
+                destination_path.parent.mkdir(parents=True, exist_ok=True)
+            _write_patch_lines(destination_path, updated_lines)
+            if operation.move_to is not None and destination_path != source_path:
+                source_path.unlink()
             changed_files.append(_render_relative_path(source_path, root))
         changed_files.append(_render_relative_path(destination_path, root))
     return {
@@ -391,7 +403,8 @@ def _write_patch_lines(target_path: Path, lines: list[str]) -> None:
     content = "\n".join(lines)
     if lines:
         content += "\n"
-    target_path.write_text(content, encoding="utf-8")
+    with _file_lock(target_path):
+        target_path.write_text(content, encoding="utf-8")
 
 
 def _iter_candidate_files(path: Path, *, glob: str | None) -> tuple[Path, ...]:

@@ -15,7 +15,7 @@ logger = logging.getLogger(__name__)
 
 # Default client-side timeout for any MCP tool call.
 # Acts as a safety net when the server-side timeout fails or the stdio channel stalls.
-# acpx calls to CC can take a long time, so we set a generous default.
+# claude_code calls can take a long time, so we set a generous default.
 _DEFAULT_TOOL_TIMEOUT_S = 3600  # 60 minutes
 
 
