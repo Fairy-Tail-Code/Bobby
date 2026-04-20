@@ -100,7 +100,7 @@ The outer agents still have `handoffs` configured with `OnCondition` + `StringLL
 
 ## Implementation
 
-### Changes to `agents/factory.py`
+### Changes to `agents/factory.py`   
 
 ```python
 def create_all_agents(

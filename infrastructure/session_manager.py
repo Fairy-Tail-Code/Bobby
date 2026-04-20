@@ -20,6 +20,8 @@ logger = logging.getLogger(__name__)
 
 _RESUME_PATTERN = re.compile(r"^harness\s+resume\s+([0-9a-fA-F]{8})$", re.IGNORECASE)
 _LIST_PATTERN = re.compile(r"^harness\s+list$", re.IGNORECASE)
+_MODE_NORMAL_PATTERN = re.compile(r"^harness\s+(?:mode\s+)?(?:normal|普通|普通模式)$", re.IGNORECASE)
+_MODE_EXPERT_PATTERN = re.compile(r"^harness\s+(?:mode\s+)?(?:expert|专家|专家模式|swarm)$", re.IGNORECASE)
 
 
 class SessionManager:
@@ -50,6 +52,7 @@ class SessionManager:
         self._skill_registry = skill_registry
         self._session_dir = session_dir
         self._sessions: dict[str, SwarmSession] = {}
+        self._chat_modes: dict[str, str] = {}  # chat_id -> "swarm" | "single"
 
     @property
     def active_sessions(self) -> int:
@@ -60,6 +63,7 @@ class SessionManager:
     ) -> None:
         """Route an incoming Feishu message.
 
+        - Mode switch command → set mode for this chat
         - Terminate keyword → kill the session
         - "harness resume <id>" → resume a saved session
         - "harness list" → list resumable sessions
@@ -67,6 +71,16 @@ class SessionManager:
         - Otherwise → create new session with text as prompt
         """
         stripped = text.strip()
+
+        # Check for mode switch commands
+        if _MODE_NORMAL_PATTERN.match(stripped):
+            self._chat_modes[chat_id] = "single"
+            await self._bot.send_text(chat_id, "已切换到普通模式 (单 Agent)")
+            return
+        if _MODE_EXPERT_PATTERN.match(stripped):
+            self._chat_modes[chat_id] = "swarm"
+            await self._bot.send_text(chat_id, "已切换到专家模式 (多 Agent 协作)")
+            return
 
         # Check for terminate command
         if stripped.lower() in _TERMINATE_KEYWORDS:
@@ -94,8 +108,13 @@ class SessionManager:
         session = self._sessions.get(chat_id)
 
         if session and session.is_running:
-            # Group chat: only session creator can reply
-            if chat_type == "group" and session.owner_open_id and open_id != session.owner_open_id:
+            # Group chat: only session creator can reply (swarm mode only)
+            if (
+                chat_type == "group"
+                and session._mode != "single"
+                and session.owner_open_id
+                and open_id != session.owner_open_id
+            ):
                 await self._bot.send_text(
                     chat_id,
                     "只有任务发起者可以回复，请联系发起者或发送'终止'结束任务。",
@@ -121,6 +140,8 @@ class SessionManager:
             old.terminate()
             await old._channel.stop()
 
+        mode = self._chat_modes.get(chat_id, self._harness_config.mode)
+
         session = SwarmSession(
             chat_id=chat_id,
             bot=self._bot,
@@ -129,13 +150,16 @@ class SessionManager:
             harness_config=self._harness_config,
             skill_registry=self._skill_registry,
             session_dir=self._session_dir,
+            mode=mode,
         )
-        # Record session owner for group chat access control
-        if chat_type == "group" and open_id:
+        # Record session owner for group chat access control (swarm mode only)
+        if mode != "single" and chat_type == "group" and open_id:
             session.owner_open_id = open_id
         self._sessions[chat_id] = session
         session.start(prompt)
-        await self._bot.send_text(chat_id, f"🚀 任务已启动: {prompt[:100]}")
+
+        mode_label = "普通模式" if mode == "single" else "专家模式"
+        await self._bot.send_text(chat_id, f"🚀 任务已启动 ({mode_label}): {prompt[:100]}")
 
     async def _resume_session(self, chat_id: str, session_id: str) -> None:
         """Load a saved session snapshot and resume it in a new SwarmSession."""

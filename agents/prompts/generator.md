@@ -60,7 +60,7 @@ claude_prompt(
 )
 
 # 2. 复杂任务 — 先写 prompt 到临时文件，再用 claude_prompt_file
-# 先用 write_file 将详细 prompt 写入 .tasks/ 目录
+# 先用 write_file 将详细 prompt 写入 ./workspace/.tasks/ 目录
 write_file(path=".tasks/task_auth.md", content="实现完整的用户认证系统...")
 
 # 再委派

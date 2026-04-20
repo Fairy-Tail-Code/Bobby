@@ -13,6 +13,7 @@ from agents.planner import create_planner
 from agents.generator import create_generator
 from agents.evaluator import create_evaluator
 from agents.PM import create_pm
+from agents.single import create_single
 from agents.user import (
     create_user,
     create_email_channel_proxies,
@@ -29,7 +30,7 @@ from infrastructure.mcp.manager import McpManager
 from infrastructure.mcp.tool_bridge import register_tools_for_agent
 from infrastructure.skills.registry import SkillRegistry
 from infrastructure.skills.tool import register_load_skill_tool
-
+from infrastructure.skills.skill_inject import inject_skill_summaries
 
 
 logger = logging.getLogger(__name__)
@@ -66,23 +67,27 @@ EVALUATOR_SKILLS = [
     "test-writer",
 ]
 
+SINGLE_SKILLS = [
+    "claude-code",
+    "repo-surveyor",
+    "fullstack-analyst",
+    "backend-analyst",
+    "backend-delivery",
+    "frontend-delivery",
+    "bug-fixer",
+    "git-operator",
+    "docker-operator",
+]
+
 # MCP server assignments per agent (must cover all MCP dependencies declared in assigned skills)
 PM_MCP_SERVERS = ["workspace", "shell"]
 PLANNER_MCP_SERVERS = ["workspace", "shell", "git", "gitee"]
 GENERATOR_MCP_SERVERS = ["shell", "git", "workspace", "browser", "docker", "database", "claude_code"]
 EVALUATOR_MCP_SERVERS = ["browser", "shell", "http_api", "workspace"]
 
+SINGLE_MCP_SERVERS = ["shell", "git", "gitee", "workspace", "browser", "claude_code"]
 
-def _inject_skill_summaries(
-    agent: ConversableAgent,
-    skill_names: list[str],
-    skill_registry: SkillRegistry,
-) -> None:
-    """Inject compact skill summaries into agent system message (progressive disclosure layer 1)."""
-    summary_block = skill_registry.build_summary_block(skill_names)
-    if summary_block:
-        original = agent.system_message
-        agent.update_system_message(original + "\n\n" + summary_block)
+
 
 
 def _register_context_transforms(
@@ -148,7 +153,7 @@ def create_planner_agent(
     if mcp_manager:
         register_tools_for_agent(agent, mcp_manager, PLANNER_MCP_SERVERS)
     if skill_registry:
-        _inject_skill_summaries(agent, PLANNER_SKILLS, skill_registry)
+        inject_skill_summaries(agent, PLANNER_SKILLS, skill_registry)
         register_load_skill_tool(agent, skill_registry, PLANNER_SKILLS)
     return agent
 
@@ -162,7 +167,7 @@ def create_generator_agent(
     agent = create_generator(llm_config)
     register_tools_for_agent(agent, mcp_manager, GENERATOR_MCP_SERVERS)
     if skill_registry:
-        _inject_skill_summaries(agent, GENERATOR_SKILLS, skill_registry)
+        inject_skill_summaries(agent, GENERATOR_SKILLS, skill_registry)
         register_load_skill_tool(agent, skill_registry, GENERATOR_SKILLS)
     return agent
 
@@ -176,7 +181,7 @@ def create_evaluator_agent(
     agent = create_evaluator(llm_config)
     register_tools_for_agent(agent, mcp_manager, EVALUATOR_MCP_SERVERS)
     if skill_registry:
-        _inject_skill_summaries(agent, EVALUATOR_SKILLS, skill_registry)
+        inject_skill_summaries(agent, EVALUATOR_SKILLS, skill_registry)
         register_load_skill_tool(agent, skill_registry, EVALUATOR_SKILLS)
     return agent
 
@@ -185,6 +190,51 @@ def creat_user_agent(
 ):
     agent = create_user(llm_config)
     return agent
+
+
+def create_single_agent(
+    llm_config: LlmConfig,
+    mcp_manager: McpManager,
+    skill_registry: SkillRegistry | None = None,
+) -> ConversableAgent:
+    """Create the all-in-one Assistant agent for single mode."""
+    agent = create_single(llm_config)
+    register_tools_for_agent(agent, mcp_manager, SINGLE_MCP_SERVERS)
+    if skill_registry:
+        inject_skill_summaries(agent, SINGLE_SKILLS, skill_registry)
+        register_load_skill_tool(agent, skill_registry, SINGLE_SKILLS)
+    return agent
+
+
+def setup_single_handoffs(agents: dict[str, ConversableAgent], hitl_mode: str = "stdin") -> None:
+    """Set up handoffs for single-agent mode.
+
+    Assistant <-> user (or assistant_owner in channel mode).
+    Assistant -> TerminateTarget on task completion.
+    """
+    assistant = agents["assistant"]
+
+    if hitl_mode in _CHANNEL_MODES:
+        human_target = AgentTarget(agents["assistant_owner"])
+    else:
+        human_target = AgentTarget(agents["user"])
+
+    assistant.handoffs = Handoffs()
+    assistant.handoffs.add_llm_conditions([
+        OnCondition(
+            target=human_target,
+            condition=StringLLMCondition(
+                "TRANSFER TO USER，当需要向用户提问、确认需求、或审批风险操作时"),
+        ),
+    ]).set_after_work(TerminateTarget())
+
+    # Human returns to Assistant after replying
+    if hitl_mode in _CHANNEL_MODES:
+        agents["assistant_owner"].handoffs = Handoffs()
+        agents["assistant_owner"].handoffs.set_after_work(AgentTarget(assistant))
+    else:
+        agents["user"].handoffs = Handoffs()
+        agents["user"].handoffs.set_after_work(AgentTarget(assistant))
 def setup_handoffs(agents: dict[str, ConversableAgent], hitl_mode: str = "stdin") -> None:
     """Set up swarm handoff conditions between agents.
 
@@ -304,19 +354,55 @@ def create_all_agents(
     role_dingtalk_ids: dict[str, str] | None = None,
     feishu_config: FeishuConfig | None = None,
     role_feishu_open_ids: dict[str, str] | None = None,
+    mode: str | None = None,
 ) -> dict[str, ConversableAgent]:
-    """Create all agents with their tools, skills, and handoffs.
+    """Create agents based on mode.
 
-    HITL modes:
-      - ``stdin``    : single UserProxyAgent reading from terminal.
-      - ``email``    : per-role proxies via SMTP/IMAP.
-      - ``dingtalk`` : per-role proxies via DingTalk Stream + REST API.
-      - ``feishu``   : per-role proxies via Feishu WS + REST API.
+    Args:
+        mode: Override harness_config.mode. Useful for runtime switching.
+              If None, reads from harness_config.
+
+    Modes:
+      - ``swarm``  : multi-agent (PM, Planner, Generator, Evaluator)
+      - ``single`` : one Assistant + user proxy
     """
     hitl_mode = harness_config.hitl.mode if harness_config else "stdin"
     hitl_cfg = harness_config.hitl if harness_config else None
+    effective_mode = mode or (harness_config.mode if harness_config else "swarm")
 
-    agents: dict[str, ConversableAgent] = {
+    # ---- Single mode ----
+    if effective_mode == "single":
+        agents: dict[str, ConversableAgent] = {
+            "assistant": create_single_agent(llm_config, mcp_manager, skill_registry),
+        }
+
+        # HITL proxy for single mode
+        if hitl_mode == "email" and smtp_config and imap_config and role_emails:
+            proxies = create_email_channel_proxies(
+                smtp_config, imap_config, hitl_cfg, role_emails,
+            )
+            agents.update(proxies)
+        elif hitl_mode == "dingtalk" and dingtalk_config and role_dingtalk_ids:
+            proxies = create_dingtalk_channel_proxies(
+                dingtalk_config, hitl_cfg, role_dingtalk_ids,
+            )
+            agents.update(proxies)
+        elif hitl_mode == "feishu" and feishu_config and role_feishu_open_ids:
+            proxies = create_feishu_channel_proxies(
+                feishu_config, hitl_cfg, role_feishu_open_ids,
+            )
+            agents.update(proxies)
+        else:
+            agents["user"] = creat_user_agent(llm_config)
+
+        if harness_config and harness_config.context.enabled:
+            _register_context_transforms(agents["assistant"], harness_config.context)
+
+        setup_single_handoffs(agents, hitl_mode)
+        return agents
+
+    # ---- Swarm mode (default) ----
+    agents = {
         "pm": create_pm_agent(llm_config, mcp_manager),
         "planner": create_planner_agent(llm_config, mcp_manager, skill_registry),
         "generator": create_generator_agent(

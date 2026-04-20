@@ -116,6 +116,7 @@ class ClaudeCodeConfig:
 
 @dataclass
 class HarnessConfig:
+    mode: str = "swarm"  # "swarm" | "single"
     max_rounds: int = 15
     score_threshold: int = 7
     dimensions: list[EvaluationDimension] = field(default_factory=list)
@@ -194,6 +195,7 @@ def load_harness_config(config_dir: Path) -> HarnessConfig:
         subject_prefix=hitl_raw.get("subject_prefix", "[OpenHarness]"),
     )
     return HarnessConfig(
+        mode=raw.get("mode", "swarm"),
         max_rounds=ctx_raw["max_rounds"],
         score_threshold=eval_cfg["score_threshold"],
         dimensions=dimensions,

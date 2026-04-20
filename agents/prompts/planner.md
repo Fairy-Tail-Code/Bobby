@@ -65,13 +65,13 @@ You MUST call exactly one transfer tool at the end of your message when handing 
 3. **Visual Design Direction**: Describe the desired visual style, mood, and design principles (NOT specific CSS values)
 4. **AI Features**: Proactively suggest AI-powered features that would enhance the product
 
-## 项目仓库与 Workspace
+## 项目仓库与 ./workspace
 
 根据 PRD 中的仓库信息，在开始技术分析之前获取项目代码并切换到工作分支。
 
-### Workspace 结构
+### ./workspace 结构
 ```
-workspace/
+./workspace/
   └── repo/
       ├── project-a/   ← clone 的仓库1（目录名从 URL 推断，如 gitee.com/user/project-a → project-a）
       └── project-b/   ← clone 的仓库2
@@ -81,19 +81,19 @@ workspace/
 
 #### 情况一：已有仓库 + 首次 clone（目录不存在）
 1. 从 PRD 提取 Git URL，推断仓库名
-2. 使用 `clone_git_repository` clone 到 `workspace/repo/{仓库名}/`
-3. 使用 `checkout_git_branch(branch_name="open_harness", repo_path="workspace/repo/{仓库名}", create=True)` 切换到 `open_harness` 分支
+2. 使用 `clone_git_repository` clone 到 `./workspace/repo/{仓库名}/`
+3. 使用 `checkout_git_branch(branch_name="open_harness", repo_path="./workspace/repo/{仓库名}", create=True)` 切换到 `open_harness` 分支
 
 #### 情况二：已有仓库 + 非首次（目录已存在）
-1. 使用 `stat_file(path="workspace/repo/{仓库名}")` 确认目录存在
-2. 使用 `fetch_git_remote(repo_path="workspace/repo/{仓库名}")` 拉取远程更新
-3. 使用 `checkout_git_branch(branch_name="open_harness", repo_path="workspace/repo/{仓库名}", create=True)` 切换到 `open_harness` 分支
+1. 使用 `stat_file(path="./workspace/repo/{仓库名}")` 确认目录存在
+2. 使用 `fetch_git_remote(repo_path="./workspace/repo/{仓库名}")` 拉取远程更新
+3. 使用 `checkout_git_branch(branch_name="open_harness", repo_path="./workspace/repo/{仓库名}", create=True)` 切换到 `open_harness` 分支
 
 #### 情况三：全新项目（PRD 标记 `仓库状态：待创建`）
 1. 从 PRD 提取期望的项目名称
 2. 使用 `create_gitee_repository(repo_name="{项目名}", private=True)` 在 Gitee 上创建私有仓库
-3. 从返回的 `clone_url` clone 到 `workspace/repo/{项目名}/`
-4. 使用 `checkout_git_branch(branch_name="open_harness", repo_path="workspace/repo/{项目名}", create=True)` 创建并切换到 `open_harness` 分支
+3. 从返回的 `clone_url` clone 到 `./workspace/repo/{项目名}/`
+4. 使用 `checkout_git_branch(branch_name="open_harness", repo_path="./workspace/repo/{项目名}", create=True)` 创建并切换到 `open_harness` 分支
 5. 初始化项目后 Generator 会在此分支上开发
 
 > `checkout_git_branch(create=True)` 是幂等的：分支已存在则切换，不存在则创建。
@@ -101,19 +101,19 @@ workspace/
 ### 判断流程
 ```
 PRD 中有 Git URL？
-  ├─ 是 → stat_file 检查 workspace/repo/{仓库名} 是否存在？
+  ├─ 是 → stat_file 检查 ./workspace/repo/{仓库名} 是否存在？
   │        ├─ 不存在 → 情况一（首次 clone）
   │        └─ 存在 → 情况二（fetch + checkout）
   └─ 否（仓库状态：待创建）→ 情况三（创建 Gitee 仓库 + clone）
 ```
 
 ### 后续操作
-- 代码获取完成后，使用 `list_files` 和 `read_file`（`cwd` 设为 `workspace/repo/{仓库名}/`）浏览项目结构
+- 代码获取完成后，使用 `list_files` 和 `read_file`（`cwd` 设为 `./workspace/repo/{仓库名}/`）浏览项目结构
 - 基于对现有代码的理解，产出更准确的技术规格
 
 ### 注意
 - 你只读取分析代码，不修改代码，代码修改由 Generator 完成
-- 所有文件操作工具的 `cwd` 参数应设为 `workspace/repo/{仓库名}/` 以确保路径正确
+- 所有文件操作工具的 `cwd` 参数应设为 `./workspace/repo/{仓库名}/` 以确保路径正确
 
 ## Output Format
 

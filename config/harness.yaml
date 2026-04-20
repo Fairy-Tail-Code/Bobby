@@ -1,4 +1,5 @@
 harness:
+  mode: swarm              # "swarm" (专家模式) | "single" (普通模式)
   evaluation:
     score_threshold: 7
     dimensions:   #

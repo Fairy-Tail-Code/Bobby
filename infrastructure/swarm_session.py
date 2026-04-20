@@ -24,7 +24,9 @@ from agents.factory import (
     create_planner_agent,
     create_generator_agent,
     create_evaluator_agent,
+    create_single_agent,
     setup_handoffs,
+    setup_single_handoffs,
     _register_context_transforms,
 )
 from agents.channel_proxy import ChannelUserProxyAgent, ROLE_DESCRIPTIONS
@@ -83,6 +85,7 @@ class SwarmSession:
         harness_config: HarnessConfig,
         skill_registry: SkillRegistry | None = None,
         session_dir: str = "session",
+        mode: str | None = None,
     ) -> None:
         self.chat_id = chat_id
         self._bot = bot
@@ -91,6 +94,7 @@ class SwarmSession:
         self._harness_config = harness_config
         self._skill_registry = skill_registry
         self._session_dir = session_dir
+        self._mode = mode or harness_config.mode
         self._task: asyncio.Task | None = None
         self._channel = ChannelFeishuService(bot, chat_id)
         self._agents: dict[str, ConversableAgent] = {}
@@ -128,18 +132,26 @@ class SwarmSession:
             self._agents = self._create_agents()
             monitor_task = self._start_message_monitor()
 
-            agents_list = [
-                self._agents["pm"],
-                self._agents["planner"],
-                self._agents["generator"],
-                self._agents["evaluator"],
-            ]
-            for key in ("pm_owner", "planner_owner", "generator_owner", "evaluator_owner"):
-                if key in self._agents:
-                    agents_list.append(self._agents[key])
+            if self._mode == "single":
+                agents_list = [self._agents["assistant"]]
+                for key in ("assistant_owner", "user"):
+                    if key in self._agents:
+                        agents_list.append(self._agents[key])
+                initial_agent = self._agents["assistant"]
+            else:
+                agents_list = [
+                    self._agents["pm"],
+                    self._agents["planner"],
+                    self._agents["generator"],
+                    self._agents["evaluator"],
+                ]
+                for key in ("pm_owner", "planner_owner", "generator_owner", "evaluator_owner"):
+                    if key in self._agents:
+                        agents_list.append(self._agents[key])
+                initial_agent = self._agents["pm"]
 
             pattern = DefaultPattern(
-                initial_agent=self._agents["pm"],
+                initial_agent=initial_agent,
                 agents=agents_list,
             )
 
@@ -212,6 +224,42 @@ class SwarmSession:
 
     def _create_agents(self) -> dict[str, ConversableAgent]:
         """Create all agents for this session."""
+        if self._mode == "single":
+            return self._create_single_agents()
+        return self._create_swarm_agents()
+
+    def _create_single_agents(self) -> dict[str, ConversableAgent]:
+        """Create agents for single mode: one Assistant + one owner proxy."""
+        agents: dict[str, ConversableAgent] = {
+            "assistant": create_single_agent(
+                self._llm_config, self._mcp_manager, self._skill_registry,
+            ),
+        }
+
+        # Single owner proxy for the assistant
+        hitl_cfg = self._harness_config.hitl
+        proxy = ChannelUserProxyAgent(
+            name="assistant_owner",
+            channel=self._channel,
+            recipient=self.chat_id,
+            role_description=(
+                "你是助手负责人，也就是用户本人。助手会向你提问以补充需求、"
+                "确认技术方案、或审批风险操作。请根据你的实际需求进行回复。"
+            ),
+            timeout=hitl_cfg.timeout,
+            polling_interval=hitl_cfg.polling_interval,
+        )
+        agents["assistant_owner"] = proxy
+        self._channel_proxies["assistant_owner"] = proxy
+
+        if self._harness_config.context.enabled:
+            _register_context_transforms(agents["assistant"], self._harness_config.context)
+
+        setup_single_handoffs(agents, "feishu")
+        return agents
+
+    def _create_swarm_agents(self) -> dict[str, ConversableAgent]:
+        """Create agents for swarm mode (PM, Planner, Generator, Evaluator)."""
         agents: dict[str, ConversableAgent] = {
             "pm": create_pm_agent(self._llm_config, self._mcp_manager),
             "planner": create_planner_agent(
@@ -231,7 +279,7 @@ class SwarmSession:
             proxy = ChannelUserProxyAgent(
                 name=role_key,
                 channel=self._channel,
-                recipient=self.chat_id,  # chat_id as recipient for service mode
+                recipient=self.chat_id,
                 role_description=description,
                 timeout=hitl_cfg.timeout,
                 polling_interval=hitl_cfg.polling_interval,
@@ -239,7 +287,6 @@ class SwarmSession:
             agents[role_key] = proxy
             self._channel_proxies[role_key] = proxy
 
-        # Context transforms for AI agents
         if self._harness_config.context.enabled:
             for key in ("pm", "planner", "generator", "evaluator"):
                 _register_context_transforms(agents[key], self._harness_config.context)
@@ -254,17 +301,18 @@ class SwarmSession:
         return asyncio.create_task(self._monitor_messages())
 
     async def _monitor_messages(self) -> None:
-        """Poll PM agent's message history and push new messages to Feishu.
+        """Poll the primary agent's message history and push new messages to Feishu.
 
         In group chat, every agent receives a full copy of all messages,
         so monitoring one agent is sufficient and avoids duplicates.
         """
         seen = 0
+        primary_key = "assistant" if self._mode == "single" else "pm"
 
         while not self._terminated:
-            pm = self._agents.get("pm")
-            if pm:
-                for other_agent, msgs in pm.chat_messages.items():
+            primary = self._agents.get(primary_key)
+            if primary:
+                for other_agent, msgs in primary.chat_messages.items():
                     new_msgs = msgs[seen:]
                     for msg in new_msgs:
                         await self._push_message_to_feishu(msg)
@@ -365,10 +413,11 @@ class SwarmSession:
 
         In group chat, every agent has a full copy of messages.
         """
-        pm = self._agents.get("pm")
-        if not pm:
+        primary_key = "assistant" if self._mode == "single" else "pm"
+        primary = self._agents.get(primary_key)
+        if not primary:
             return []
-        for _other_agent, msgs in pm.chat_messages.items():
+        for _other_agent, msgs in primary.chat_messages.items():
             return list(msgs)
         return []
 

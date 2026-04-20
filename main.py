@@ -99,7 +99,7 @@ async def run(prompt: str) -> None:
             logger.info("HITL mode: feishu (app_id=%s)", feishu_config.app_id[:6] + "..." if feishu_config.app_id else "N/A")
 
         # 创建所有智能体：包含技能、转接逻辑、人工代理（如需）
-        logger.info("Creating agents with skills and swarm handoffs...")
+        logger.info("Creating agents (mode=%s)...", harness_config.mode)
 
         agents_dict = create_all_agents(
             llm_config, mcp_manager, skill_registry, harness_config,
@@ -112,18 +112,22 @@ async def run(prompt: str) -> None:
             role_feishu_open_ids=role_feishu_open_ids,
         )
 
-        # 构建智能体列表：核心 AI 智能体 + 可选的人工代理
-        # todo 这部分最好整合到一个config而不是这里写死。
-        agents_list = [
-            agents_dict["planner"],  # 规划器
-            agents_dict["generator"],  # 生成器
-            agents_dict["evaluator"],  # 评估器
-            agents_dict["pm"]
-        ]
-        # 如果存在人工代理，追加到智能体列表
-        for key in ("user", "pm_owner", "planner_owner", "generator_owner", "evaluator_owner"):
-            if key in agents_dict:
-                agents_list.append(agents_dict[key])
+        # 构建智能体列表
+        if harness_config.mode == "single":
+            agents_list = [agents_dict["assistant"]]
+            for key in ("user", "assistant_owner"):
+                if key in agents_dict:
+                    agents_list.append(agents_dict[key])
+        else:
+            agents_list = [
+                agents_dict["planner"],
+                agents_dict["generator"],
+                agents_dict["evaluator"],
+                agents_dict["pm"],
+            ]
+            for key in ("user", "pm_owner", "planner_owner", "generator_owner", "evaluator_owner"):
+                if key in agents_dict:
+                    agents_list.append(agents_dict[key])
 
         # 启动多智能体群聊（Swarm），设置初始发言智能体、最大轮数等
         logger.info(
@@ -132,8 +136,9 @@ async def run(prompt: str) -> None:
             prompt[:100],  # 只打印前100字符避免日志过长
         )
         # arun_swarm开始循环
+        initial_agent = agents_dict.get("assistant") or agents_dict["pm"]
         chat_result, context, last_speaker,manager = await arun_swarm(
-            initial_agent=agents_dict["pm"],  # 从规划器开始
+            initial_agent=initial_agent,
             agents=agents_list,  # 参与群聊的所有智能体
             prompt=prompt,  # 用户输入提示词
             harness_config=harness_config,  # 配置
