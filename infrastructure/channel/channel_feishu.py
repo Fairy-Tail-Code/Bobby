@@ -18,7 +18,7 @@ import json
 import logging
 import threading
 
-from infrastructure.channel import ChannelAdapter
+from infrastructure.channel.channel import ChannelAdapter
 
 logger = logging.getLogger(__name__)
 
@@ -52,7 +52,6 @@ class FeishuChannel(ChannelAdapter):
         self._started = True
 
         import lark_oapi as lark
-        from lark_oapi.api.im.v1 import CreateMessageRequest, CreateMessageRequestBody
 
         # Client for sending messages
         self._lark_client = (

@@ -16,7 +16,7 @@ from datetime import datetime
 from pathlib import Path
 
 from autogen import ConversableAgent
-from autogen.agentchat.group.patterns import AutoPattern,DefaultPattern
+from autogen.agentchat.group.patterns import DefaultPattern
 from autogen.agentchat.group.multi_agent_chat import a_initiate_group_chat
 
 from agents.factory import (
@@ -28,7 +28,7 @@ from agents.factory import (
     _register_context_transforms,
 )
 from agents.channel_proxy import ChannelUserProxyAgent, ROLE_DESCRIPTIONS
-from infrastructure.channel_feishu_service import ChannelFeishuService
+from infrastructure.channel.channel_feishu_service import ChannelFeishuService
 from infrastructure.config import HarnessConfig, LlmConfig
 from infrastructure.feishu_bot import FeishuBotService
 from infrastructure.mcp.manager import McpManager

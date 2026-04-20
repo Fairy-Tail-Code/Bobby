@@ -6,10 +6,9 @@ import logging
 from autogen import ConversableAgent
 
 from agents.channel_proxy import create_channel_proxies
-from infrastructure.channel import ChannelAdapter
-from infrastructure.channel_email import EmailChannel
-from infrastructure.channel_dingtalk import DingTalkChannel
-from infrastructure.channel_feishu import FeishuChannel
+from infrastructure.channel.channel_email import EmailChannel
+from infrastructure.channel.channel_dingtalk import DingTalkChannel
+from infrastructure.channel.channel_feishu import FeishuChannel
 from infrastructure.config import (
     LlmConfig, SmtpConfig, ImapConfig, HitlConfig,
     DingTalkConfig, FeishuConfig,

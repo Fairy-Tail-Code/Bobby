@@ -8,7 +8,7 @@ import smtplib
 from email.mime.multipart import MIMEMultipart
 from email.mime.text import MIMEText
 
-from infrastructure.channel import ChannelAdapter
+from infrastructure.channel.channel import ChannelAdapter
 from infrastructure.config import SmtpConfig, ImapConfig
 
 logger = logging.getLogger(__name__)

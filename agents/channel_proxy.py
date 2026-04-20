@@ -15,8 +15,8 @@ import uuid
 from autogen import UserProxyAgent
 from autogen.io.base import AsyncInputStream
 
-from infrastructure.channel import ChannelAdapter
-from infrastructure.channel_feishu_service import ChannelFeishuService
+from infrastructure.channel.channel import ChannelAdapter
+from infrastructure.channel.channel_feishu_service import ChannelFeishuService
 
 logger = logging.getLogger(__name__)
 

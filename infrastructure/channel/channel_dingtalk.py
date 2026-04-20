@@ -14,9 +14,8 @@ from __future__ import annotations
 import asyncio
 import json
 import logging
-import time
 
-from infrastructure.channel import ChannelAdapter
+from infrastructure.channel.channel import ChannelAdapter
 
 logger = logging.getLogger(__name__)
 

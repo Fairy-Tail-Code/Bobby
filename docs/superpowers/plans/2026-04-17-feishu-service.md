@@ -270,7 +270,7 @@ import asyncio
 import logging
 import uuid
 
-from infrastructure.channel import ChannelAdapter
+from infrastructure.channel.channel import ChannelAdapter
 from infrastructure.feishu_bot import FeishuBotService
 
 logger = logging.getLogger(__name__)
@@ -376,7 +376,7 @@ git commit -m "feat: add ChannelFeishuService with Future-based reply injection"
 在文件顶部添加 import：
 
 ```python
-from infrastructure.channel_feishu_service import ChannelFeishuService
+from infrastructure.channel.channel_feishu_service import ChannelFeishuService
 ```
 
 替换 `a_get_human_input` 方法（第 72-98 行）为：
@@ -464,7 +464,7 @@ from agents.factory import (
     _register_context_transforms,
 )
 from agents.channel_proxy import ChannelUserProxyAgent, ROLE_DESCRIPTIONS
-from infrastructure.channel_feishu_service import ChannelFeishuService
+from infrastructure.channel.channel_feishu_service import ChannelFeishuService
 from infrastructure.config import (
     HarnessConfig, LlmConfig, HitlConfig, FeishuConfig,
 )
@@ -491,14 +491,14 @@ class SwarmSession:
     """
 
     def __init__(
-        self,
-        chat_id: str,
-        bot: FeishuBotService,
-        mcp_manager: McpManager,
-        llm_config: LlmConfig,
-        harness_config: HarnessConfig,
-        skill_registry: SkillRegistry | None = None,
-        session_dir: str = "session",
+            self,
+            chat_id: str,
+            bot: FeishuBotService,
+            mcp_manager: McpManager,
+            llm_config: LlmConfig,
+            harness_config: HarnessConfig,
+            skill_registry: SkillRegistry | None = None,
+            session_dir: str = "session",
     ) -> None:
         self.chat_id = chat_id
         self._bot = bot
@@ -629,11 +629,12 @@ class SwarmSession:
 
     def _make_intercept_hook(self, agent: ConversableAgent):
         """Create a reply hook for a specific agent."""
+
         async def hook(
-            recipient: ConversableAgent,
-            messages: list[dict] | None = None,
-            sender: ConversableAgent | None = None,
-            config: Any = None,
+                recipient: ConversableAgent,
+                messages: list[dict] | None = None,
+                sender: ConversableAgent | None = None,
+                config: Any = None,
         ) -> tuple[bool, str | dict | None]:
             if not messages:
                 return False, None
