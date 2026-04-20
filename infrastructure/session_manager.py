@@ -98,7 +98,7 @@ class SessionManager:
             if chat_type == "group" and session.owner_open_id and open_id != session.owner_open_id:
                 await self._bot.send_text(
                     chat_id,
-                    "只有任务发起者可以回复，请联系发起者或发送"终止"结束任务。",
+                    "只有任务发起者可以回复，请联系发起者或发送'终止'结束任务。",
                 )
                 return
             # Active session — inject user reply

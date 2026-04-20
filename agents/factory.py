@@ -68,7 +68,7 @@ EVALUATOR_SKILLS = [
 
 # MCP server assignments per agent (must cover all MCP dependencies declared in assigned skills)
 PM_MCP_SERVERS = ["workspace", "shell"]
-PLANNER_MCP_SERVERS = ["workspace", "shell", "git"]
+PLANNER_MCP_SERVERS = ["workspace", "shell", "git", "gitee"]
 GENERATOR_MCP_SERVERS = ["shell", "git", "workspace", "browser", "docker", "database", "claude_code"]
 EVALUATOR_MCP_SERVERS = ["browser", "shell", "http_api", "workspace"]
 
