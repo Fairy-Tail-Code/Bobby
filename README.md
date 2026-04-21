@@ -213,15 +213,19 @@ context:
   auto_compact_enabled: true
 ```
 
-### Claude Code 委派
+### Claude Code 委派（`claude -p` 模式）
 
-Generator 可通过 `claude_code` MCP 服务器将编码任务委派给 Claude Code CLI：
+Generator 通过 `claude_code` MCP 服务器调用 `claude -p` 进行非交互式编码委派。支持两种调用方式：
+- `claude_prompt`：直接传入 Prompt 字符串
+- `claude_prompt_file`：从文件读取 Prompt（适用于长 Prompt）
+
+需本地安装 [Claude Code CLI](https://docs.anthropic.com/en/docs/claude-code)，配置字段保留 `acpx` 名称：
 
 ```yaml
 acpx:
-  model: sonnet
-  default_timeout: 600
-  max_retries: 2
+  model: sonnet             # Claude 模型别名（sonnet, opus, haiku）
+  default_timeout: 600      # 单次任务超时（秒）
+  max_retries: 2            # 失败后最大重试次数
 ```
 
 ## 配置参考
