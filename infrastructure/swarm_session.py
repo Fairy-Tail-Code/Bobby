@@ -100,6 +100,7 @@ class SwarmSession:
         self._agents: dict[str, ConversableAgent] = {}
         self._channel_proxies: dict[str, ChannelUserProxyAgent] = {}
         self._terminated = False
+        self._pushed_count: int = 0
         self._prompt: str = ""
         self._is_resume: bool = False
         self._resume_messages: list[dict] = []
@@ -178,8 +179,9 @@ class SwarmSession:
                 max_rounds=self._harness_config.max_rounds,
             )
 
-            # Stop the message monitor now that the swarm is done
+            # Stop the message monitor and flush remaining messages
             monitor_task.cancel()
+            await self._flush_remaining_messages(result.chat_history)
 
             # Save snapshot with generated session_id
             session_id = SessionSnapshot.generate_id()
@@ -306,17 +308,16 @@ class SwarmSession:
         In group chat, every agent receives a full copy of all messages,
         so monitoring one agent is sufficient and avoids duplicates.
         """
-        seen = 0
         primary_key = "assistant" if self._mode == "single" else "pm"
 
         while not self._terminated:
             primary = self._agents.get(primary_key)
             if primary:
                 for other_agent, msgs in primary.chat_messages.items():
-                    new_msgs = msgs[seen:]
+                    new_msgs = msgs[self._pushed_count:]
                     for msg in new_msgs:
                         await self._push_message_to_feishu(msg)
-                    seen = len(msgs)
+                    self._pushed_count = len(msgs)
             await asyncio.sleep(1)
 
     async def _push_message_to_feishu(self, msg: dict) -> None:
@@ -359,6 +360,17 @@ class SwarmSession:
             self.chat_id,
             f"【{name}】\n{stripped}",
         )
+
+    async def _flush_remaining_messages(self, chat_history: list[dict]) -> None:
+        """Push messages from chat_history that the monitor missed.
+
+        Called after the swarm completes. Tracks which messages have already
+        been pushed to avoid duplicates.
+        """
+        new_msgs = chat_history[self._pushed_count:]
+        for msg in new_msgs:
+            await self._push_message_to_feishu(msg)
+        self._pushed_count = len(chat_history)
 
     # --------------------------------------------------- reply injection
 

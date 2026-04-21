@@ -209,8 +209,10 @@ def create_single_agent(
 def setup_single_handoffs(agents: dict[str, ConversableAgent], hitl_mode: str = "stdin") -> None:
     """Set up handoffs for single-agent mode.
 
-    Assistant <-> user (or assistant_owner in channel mode).
-    Assistant -> TerminateTarget on task completion.
+    Conversational loop: Assistant <-> user (or assistant_owner in channel mode).
+    - Assistant.after_work → user (always loops back to user for next input)
+    - user.after_work → Assistant (user reply triggers assistant response)
+    - Termination via user sending "终止" or max_rounds
     """
     assistant = agents["assistant"]
 
@@ -226,7 +228,7 @@ def setup_single_handoffs(agents: dict[str, ConversableAgent], hitl_mode: str = 
             condition=StringLLMCondition(
                 "TRANSFER TO USER，当需要向用户提问、确认需求、或审批风险操作时"),
         ),
-    ]).set_after_work(TerminateTarget())
+    ]).set_after_work(human_target)
 
     # Human returns to Assistant after replying
     if hitl_mode in _CHANNEL_MODES:
