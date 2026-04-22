@@ -2,6 +2,9 @@ __pycache__/
 .claude/
 .env
 session/
-Discarded_plan/
+
 workspace/
 todo/
+
+Discarded_plan/
+own_knowledge/

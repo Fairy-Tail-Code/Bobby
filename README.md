@@ -27,6 +27,11 @@
           └────────────┬────────────┘
                        │
                   审核通过 / 回退
+                       │
+          ┌────────────▼────────────────────────────┐
+          │        Knowledge Server (可选)            │
+          │  经验收集 → 离线队列 → 中央服务器同步       │
+          └──────────────────────────────────────────┘
 ```
 
 ### 两种运行模式
@@ -89,17 +94,33 @@ python main.py "构建一个带暗色主题的任务管理应用"
 
 # 飞书服务模式（需配置飞书应用）
 python server.py
+
+# 启动中央知识服务器（可选）
+python -m knowledge_server
+
+# 知识管理命令
+python main.py knowledge status       # 查看同步状态
+python main.py knowledge sync         # 手动同步经验
+python main.py knowledge search "React"  # 搜索经验
 ```
 
 ## 项目结构
 
 ```
 AG2_openharness/
-├── main.py                    # CLI 入口
+├── main.py                    # CLI 入口（含 knowledge 子命令）
 ├── server.py                  # 飞书 Bot 服务入口
 ├── config/
-│   ├── harness.yaml           # 框架主配置（模式、轮数、评估维度等）
+│   ├── harness.yaml           # 框架主配置（模式、轮数、评估维度、知识共享等）
 │   └── mcp.yaml               # MCP 服务器配置
+├── knowledge_server/          # 中央知识服务器
+│   ├── main.py                # uvicorn 启动入口
+│   ├── app.py                 # FastAPI 应用工厂
+│   ├── database.py            # SQLite + FTS5 全文索引
+│   ├── models.py              # Pydantic 数据模型
+│   ├── config.py              # 服务端配置
+│   ├── routers/               # API 端点（auth、experiences、sync、search）
+│   └── services/              # 业务逻辑（experience_service、search_service）
 ├── agents/
 │   ├── factory.py             # 智能体工厂（创建、技能注入、Handoff 设置）
 │   ├── PM.py                  # PM 智能体
@@ -113,10 +134,15 @@ AG2_openharness/
 │   ├── group.py               # Swarm 群聊编排
 │   └── termination.py         # 终止条件
 ├── infrastructure/
-│   ├── config.py              # 配置加载（.env + YAML）
-│   ├── swarm_session.py       # Session 管理
+│   ├── config.py              # 配置加载（.env + YAML + KnowledgeConfig）
+│   ├── swarm_session.py       # Session 管理（含知识收集触发）
 │   ├── session_manager.py     # 飞书服务模式 Session 管理
 │   ├── feishu_bot.py          # 飞书 Bot SDK 封装
+│   ├── knowledge/             # 本地经验收集器
+│   │   ├── collector.py       # LLM 经验提取
+│   │   ├── local_store.py     # SQLite 离线队列
+│   │   ├── sync_client.py     # HTTP 同步客户端
+│   │   └── formatter.py       # Memory 文件格式化
 │   ├── mcp/
 │   │   ├── manager.py         # MCP 服务器生命周期管理
 │   │   └── tool_bridge.py     # MCP 工具注册到 AG2 Agent
@@ -219,14 +245,38 @@ Generator 通过 `claude_code` MCP 服务器调用 `claude -p` 进行非交互�
 - `claude_prompt`：直接传入 Prompt 字符串
 - `claude_prompt_file`：从文件读取 Prompt（适用于长 Prompt）
 
-需本地安装 [Claude Code CLI](https://docs.anthropic.com/en/docs/claude-code)，配置字段保留 `acpx` 名称：
+需本地安装 [Claude Code CLI](https://docs.anthropic.com/en/docs/claude-code)。
+
+### 知识共享（Knowledge Server）
+
+可选的中央知识服务器，支持跨会话、跨用户的开发经验共享：
+
+- **经验自动收集**：Swarm 完成后，LLM 自动从聊天历史提取结构化经验（问题解决方案、代码模式、架构决策等）
+- **离线优先**：服务器不可用时经验写入本地 SQLite 队列，下次同步时推送
+- **全文搜索**：基于 SQLite FTS5，支持关键词检索历史经验
+- **双向同步**：推送本地经验 + 拉取共享经验到本地 memory
 
 ```yaml
-acpx:
-  model: sonnet             # Claude 模型别名（sonnet, opus, haiku）
-  default_timeout: 600      # 单次任务超时（秒）
-  max_retries: 2            # 失败后最大重试次数
+# config/harness.yaml
+harness:
+  knowledge:
+    enabled: true
+    server_url: "http://localhost:8900"
+    offline_enabled: true
+    pull_enabled: true
 ```
+
+```bash
+# 启动知识服务器
+python -m knowledge_server
+
+# 管理命令
+python main.py knowledge status
+python main.py knowledge sync
+python main.py knowledge search "React 路由"
+```
+
+详细架构设计参见 [docs/AG2_knowledge/知识服务器架构.md](docs/AG2_knowledge/知识服务器架构.md)。
 
 ## 配置参考
 
@@ -246,6 +296,8 @@ acpx:
 | `HITL_{ROLE}_EMAIL` | 各角色对应的人类操作员邮箱 |
 | `HITL_{ROLE}_DINGTALK_USER_ID` | 各角色对应的钉钉用户 ID |
 | `HITL_{ROLE}_FEISHU_OPEN_ID` | 各角色对应的飞书用户 Open ID |
+| `KNOWLEDGE_SERVER_API_KEY` | 知识服务器 API Key |
+| `KNOWLEDGE_CLIENT_ID` | 本地客户端唯一标识 |
 
 ### `config/harness.yaml`
 
@@ -272,6 +324,11 @@ harness:
     mode: stdin
     polling_interval: 30
     timeout: 3600
+  knowledge:
+    enabled: false
+    server_url: "http://localhost:8900"
+    offline_enabled: true
+    pull_enabled: true
 ```
 
 ## 测试
@@ -285,6 +342,7 @@ pytest tests/
 - **框架**：AG2 (AutoGen) >= 0.7.0
 - **LLM**：OpenAI 兼容 API（智谱 GLM、OpenAI、SiliconFlow 等）
 - **工具协议**：MCP (Model Context Protocol) >= 1.27.0
+- **知识服务器**：FastAPI + SQLite (FTS5)
 - **浏览器自动化**：Playwright
 - **通讯集成**：飞书 SDK (lark-oapi)、SMTP/IMAP、钉钉
 - **Python**：>= 3.12

@@ -44,3 +44,11 @@ harness:
     max_retries: 2            # 失败后最大重试次数
   session:
     session_dir: session/
+
+  knowledge:
+    enabled: true                     # 是否启用知识收集和同步
+    server_url: "http://localhost:8900" # 中央知识服务器地址
+    sync_interval_seconds: 300         # 同步间隔（秒）
+    offline_enabled: true              # 离线模式下队列缓存
+    pull_enabled: true                 # 是否从服务器拉取共享经验
+    pull_categories: []                # 拉取的经验类别（空=全部）

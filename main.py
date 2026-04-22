@@ -14,6 +14,7 @@ from infrastructure.config import (
     load_smtp_config, load_imap_config, load_role_emails,
     load_dingtalk_config, load_role_dingtalk_ids,
     load_feishu_config, load_role_feishu_open_ids,
+    load_knowledge_config,
 )
 from infrastructure.mcp.manager import McpManager
 from infrastructure.skills.registry import SkillRegistry
@@ -155,6 +156,56 @@ async def run(prompt: str) -> None:
 
         # todo 加入session resume功能
         logger.info("Swarm completed. Last speaker: %s", last_speaker.name)
+
+        # === 知识收集与同步 ===
+        knowledge_config = harness_config.knowledge
+        if knowledge_config and knowledge_config.enabled:
+            try:
+                from infrastructure.knowledge.collector import ExperienceCollector
+                from infrastructure.knowledge.local_store import LocalKnowledgeStore
+                from infrastructure.knowledge.sync_client import KnowledgeSyncClient
+                from infrastructure.knowledge.formatter import write_pulled_experiences
+
+                collector = ExperienceCollector(llm_config.generator, knowledge_config)
+                experiences = await collector.collect_from_session(
+                    chat_history=chat_result.chat_history,
+                    session_metadata={
+                        "prompt": prompt,
+                        "mode": harness_config.mode,
+                        "session_id": timestamp,
+                        "project_type": "+".join(harness_config.tech_stack.values()) if harness_config.tech_stack else None,
+                    },
+                )
+
+                if experiences:
+                    local_store = LocalKnowledgeStore(knowledge_config.local_store_path)
+                    await local_store.connect()
+                    try:
+                        enqueued = await local_store.enqueue(experiences)
+                        logger.info("Enqueued %d experiences for sync", enqueued)
+
+                        # Try immediate sync
+                        sync_client = KnowledgeSyncClient(knowledge_config)
+                        if await sync_client.health_check():
+                            result = await sync_client.sync_with_server(local_store)
+                            logger.info("Sync result: pushed=%d, pulled=%d, errors=%d",
+                                        result["pushed"], result["pulled"], result["errors"])
+
+                            # Integrate pulled experiences
+                            if knowledge_config.pull_enabled and result["pulled"] > 0:
+                                pull_resp = await sync_client.pull()
+                                if pull_resp and pull_resp.get("experiences"):
+                                    written = write_pulled_experiences(
+                                        pull_resp["experiences"],
+                                        knowledge_config.collected_dir + "/shared",
+                                    )
+                                    logger.info("Wrote %d shared experiences to local memory", written)
+                        else:
+                            logger.info("Knowledge server unreachable; %d experiences queued locally", enqueued)
+                    finally:
+                        await local_store.close()
+            except Exception:
+                logger.exception("Knowledge collection/sync failed, continuing...")
     finally:
         # 无论是否异常，最终都断开 MCP 服务，释放资源
         logger.info("Disconnecting MCP servers...")
@@ -164,11 +215,94 @@ async def run(prompt: str) -> None:
 def main() -> None:
     if len(sys.argv) < 2:
         print("Usage: python main.py \"Your application description\"")
+        print("       python main.py knowledge sync")
+        print("       python main.py knowledge search <query>")
+        print("       python main.py knowledge status")
         print("Example: python main.py \"Build a task management app with dark theme\"")
         sys.exit(1)
 
+    if sys.argv[1] == "knowledge":
+        asyncio.run(_handle_knowledge_command(sys.argv[2:]))
+        return
+
     prompt = " ".join(sys.argv[1:])
     asyncio.run(run(prompt))
+
+
+async def _handle_knowledge_command(args: list[str]) -> None:
+    """Handle knowledge subcommands: sync, search, status."""
+    knowledge_config = load_knowledge_config(PROJECT_DIR)
+    if not knowledge_config.enabled:
+        print("Knowledge sharing is not enabled. Set knowledge.enabled=true in config/harness.yaml")
+        sys.exit(1)
+
+    if not args or args[0] == "status":
+        await _knowledge_status(knowledge_config)
+    elif args[0] == "sync":
+        await _knowledge_sync(knowledge_config)
+    elif args[0] == "search" and len(args) > 1:
+        await _knowledge_search(knowledge_config, " ".join(args[1:]))
+    else:
+        print(f"Unknown knowledge command: {args[0] if args else 'none'}")
+        print("Available: sync, search <query>, status")
+        sys.exit(1)
+
+
+async def _knowledge_status(config) -> None:
+    from infrastructure.knowledge.local_store import LocalKnowledgeStore
+    from infrastructure.knowledge.sync_client import KnowledgeSyncClient
+
+    sync_client = KnowledgeSyncClient(config)
+    server_ok = await sync_client.health_check()
+
+    store = LocalKnowledgeStore(config.local_store_path)
+    await store.connect()
+    try:
+        status = await store.get_status()
+    finally:
+        await store.close()
+
+    print(f"Server: {'online' if server_ok else 'offline'} ({config.server_url})")
+    print(f"Client ID: {config.client_id or 'not set'}")
+    print(f"Queue status: {status or 'empty'}")
+
+
+async def _knowledge_sync(config) -> None:
+    from infrastructure.knowledge.local_store import LocalKnowledgeStore
+    from infrastructure.knowledge.sync_client import KnowledgeSyncClient
+
+    sync_client = KnowledgeSyncClient(config)
+    if not await sync_client.health_check():
+        print(f"Server unreachable at {config.server_url}")
+        sys.exit(1)
+
+    store = LocalKnowledgeStore(config.local_store_path)
+    await store.connect()
+    try:
+        result = await sync_client.sync_with_server(store)
+        print(f"Sync complete: pushed={result['pushed']}, pulled={result['pulled']}, errors={result['errors']}")
+    finally:
+        await store.close()
+
+
+async def _knowledge_search(config, query: str) -> None:
+    from infrastructure.knowledge.sync_client import KnowledgeSyncClient
+
+    sync_client = KnowledgeSyncClient(config)
+    result = await sync_client.search(query)
+    if not result:
+        print("No results or server unreachable")
+        return
+
+    experiences = result.get("results", [])
+    total = result.get("total", 0)
+    print(f"Found {total} results for '{query}':\n")
+    for i, exp in enumerate(experiences, 1):
+        print(f"  {i}. [{exp.get('category')}] {exp.get('title')}")
+        tags = ", ".join(exp.get("tags", []))
+        if tags:
+            print(f"     Tags: {tags}")
+        print()
 
 
 if __name__ == "__main__":

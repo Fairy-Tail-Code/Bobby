@@ -115,6 +115,22 @@ class ClaudeCodeConfig:
 
 
 @dataclass
+class KnowledgeConfig:
+    enabled: bool = False
+    server_url: str = "http://localhost:8900"
+    api_key: str = ""
+    client_id: str = ""
+    sync_interval_seconds: int = 300
+    batch_size: int = 50
+    max_retries: int = 3
+    offline_enabled: bool = True
+    pull_enabled: bool = True
+    pull_categories: list[str] = field(default_factory=list)
+    local_store_path: str = ".openharness/knowledge_queue.db"
+    collected_dir: str = ".openharness/collected"
+
+
+@dataclass
 class HarnessConfig:
     mode: str = "swarm"  # "swarm" | "single"
     max_rounds: int = 15
@@ -124,6 +140,7 @@ class HarnessConfig:
     context: ContextConfig = field(default_factory=ContextConfig)
     hitl: HitlConfig = field(default_factory=HitlConfig)
     acpx: ClaudeCodeConfig = field(default_factory=ClaudeCodeConfig)
+    knowledge: KnowledgeConfig = field(default_factory=KnowledgeConfig)
 
 
 def _load_yaml(path: Path) -> dict:
@@ -207,6 +224,7 @@ def load_harness_config(config_dir: Path) -> HarnessConfig:
             default_timeout=acpx_raw.get("default_timeout", 600),
             max_retries=acpx_raw.get("max_retries", 2),
         ) if (acpx_raw := raw.get("acpx", {})) else ClaudeCodeConfig(),
+        knowledge=load_knowledge_config(config_dir.parent),
     )
 
 
@@ -277,3 +295,27 @@ def load_role_feishu_open_ids(project_dir: Path) -> dict[str, str]:
         "generator": env.get("HITL_GENERATOR_FEISHU_OPEN_ID", ""),
         "evaluator": env.get("HITL_EVALUATOR_FEISHU_OPEN_ID", ""),
     }
+
+
+def load_knowledge_config(project_dir: Path) -> KnowledgeConfig:
+    """Load knowledge sharing config from .env and harness.yaml."""
+    env = _load_dotenv(project_dir / ".env")
+    config_dir = project_dir / "config"
+    raw = {}
+    if (config_dir / "harness.yaml").exists():
+        harness_raw = _load_yaml(config_dir / "harness.yaml")
+        raw = harness_raw.get("harness", {}).get("knowledge", {})
+    return KnowledgeConfig(
+        enabled=raw.get("enabled", False),
+        server_url=env.get("KNOWLEDGE_SERVER_URL", raw.get("server_url", "http://localhost:8900")),
+        api_key=env.get("KNOWLEDGE_SERVER_API_KEY", ""),
+        client_id=env.get("KNOWLEDGE_CLIENT_ID", ""),
+        sync_interval_seconds=raw.get("sync_interval_seconds", 300),
+        batch_size=raw.get("batch_size", 50),
+        max_retries=raw.get("max_retries", 3),
+        offline_enabled=raw.get("offline_enabled", True),
+        pull_enabled=raw.get("pull_enabled", True),
+        pull_categories=raw.get("pull_categories", []),
+        local_store_path=raw.get("local_store_path", ".openharness/knowledge_queue.db"),
+        collected_dir=raw.get("collected_dir", ".openharness/collected"),
+    )

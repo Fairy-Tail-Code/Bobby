@@ -196,6 +196,9 @@ class SwarmSession:
                 f"✅ 任务完成！最后发言: {last_speaker.name}\n"
                 f"📋 会话ID（可用于恢复）: {session_id}",
             )
+
+            # === Knowledge collection and sync (fire-and-forget) ===
+            await self._collect_and_sync_knowledge(result.chat_history, session_id)
         except asyncio.CancelledError:
             # Extract messages from agents before they are cleaned up
             messages = self._extract_messages_from_agents()
@@ -221,6 +224,52 @@ class SwarmSession:
         if self._task and not self._task.done():
             self._task.cancel()
         self._terminated = True
+
+    async def _collect_and_sync_knowledge(
+        self, chat_history: list[dict], session_id: str,
+    ) -> None:
+        """Collect experiences from chat history and sync to knowledge server."""
+        knowledge_config = self._harness_config.knowledge
+        if not knowledge_config or not knowledge_config.enabled:
+            return
+
+        try:
+            from infrastructure.knowledge.collector import ExperienceCollector
+            from infrastructure.knowledge.local_store import LocalKnowledgeStore
+            from infrastructure.knowledge.sync_client import KnowledgeSyncClient
+
+            collector = ExperienceCollector(self._llm_config.generator, knowledge_config)
+            experiences = await collector.collect_from_session(
+                chat_history=chat_history,
+                session_metadata={
+                    "prompt": self._prompt,
+                    "mode": self._mode,
+                    "session_id": session_id,
+                    "project_type": "+".join(self._harness_config.tech_stack.values())
+                    if self._harness_config.tech_stack else None,
+                },
+            )
+
+            if not experiences:
+                return
+
+            local_store = LocalKnowledgeStore(knowledge_config.local_store_path)
+            await local_store.connect()
+            try:
+                enqueued = await local_store.enqueue(experiences)
+                logger.info("Enqueued %d experiences (chat_id=%s)", enqueued, self.chat_id)
+
+                sync_client = KnowledgeSyncClient(knowledge_config)
+                if await sync_client.health_check():
+                    result = await sync_client.sync_with_server(local_store)
+                    logger.info(
+                        "Knowledge sync: pushed=%d, pulled=%d, errors=%d (chat_id=%s)",
+                        result["pushed"], result["pulled"], result["errors"], self.chat_id,
+                    )
+            finally:
+                await local_store.close()
+        except Exception:
+            logger.exception("Knowledge collection/sync failed (chat_id=%s)", self.chat_id)
 
     # ---------------------------------------------------- agent creation
 
