@@ -41,6 +41,8 @@ class McpServerConfig:
     command: str
     args: list[str] = field(default_factory=list)
     startup_timeout: int = 30
+
+@dataclass
 class McpBaseConfig:
     tool_timeout: int
 
