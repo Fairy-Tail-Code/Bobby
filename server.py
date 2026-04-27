@@ -47,7 +47,7 @@ async def main() -> None:
 
     # 3. Connect MCP servers
     logger.info("Connecting to MCP servers...")
-    mcp_manager = McpManager()
+    mcp_manager = McpManager(mcp_config)
     connected_servers: list[str] = []
     for server_cfg in mcp_config.servers:
         try:

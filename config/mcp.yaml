@@ -58,3 +58,6 @@ mcp_servers:
     command: uv
     args: ["run", "python", "-m", "infrastructure.mcp_servers.claude_code_server"]
     startup_timeout: 10
+
+mcp_config:
+  tool_timeout: 1800

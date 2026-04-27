@@ -41,11 +41,14 @@ class McpServerConfig:
     command: str
     args: list[str] = field(default_factory=list)
     startup_timeout: int = 30
+class McpBaseConfig:
+    tool_timeout: int
 
 
 @dataclass
 class McpConfig:
     servers: list[McpServerConfig]
+    base_config: McpBaseConfig
 
 
 @dataclass
@@ -185,11 +188,12 @@ def load_llm_config(project_dir: Path) -> LlmConfig:
 
 
 def load_mcp_config(config_dir: Path) -> McpConfig:
-    raw = _load_yaml(config_dir / "mcp.yaml")["mcp_servers"]
+    mcp_servers = _load_yaml(config_dir / "mcp.yaml")["mcp_servers"]
+    base_config = _load_yaml(config_dir / "mcp.yaml")["base_config"]
     servers = []
-    for name, cfg in raw.items():
+    for name, cfg in mcp_servers.items():
         servers.append(McpServerConfig(name=name, **cfg))
-    return McpConfig(servers=servers)
+    return McpConfig(servers=servers,base_config=base_config)
 
 
 def load_harness_config(config_dir: Path) -> HarnessConfig:

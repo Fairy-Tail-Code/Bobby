@@ -90,6 +90,10 @@ class FeishuBotService:
         ws_mod.loop = new_loop
 
         try:
+            # 在 daemon 线程中启动 WS Client（独立事件循环）
+            # lark-oapi 的 WS Client 内部调用 `loop.run_until_complete()`，、
+            # 如果在已运行的事件循环上调用会抛 `RuntimeError: This event loop is already running`。
+            # 所以必须创建新事件循环并覆盖模块级 `ws_mod.loop` 变量。
             self._ws_client.start()
         except Exception:
             logger.exception("FeishuBotService WS client error")

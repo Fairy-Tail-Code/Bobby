@@ -56,7 +56,7 @@ async def run(prompt: str) -> None:
 
     # 连接所有配置的 MCP 服务器（用于工具调用/外部服务）
     logger.info("Connecting to MCP servers...")
-    mcp_manager = McpManager()
+    mcp_manager = McpManager(mcp_config)
     connected_servers: list[str] = []
     for server_cfg in mcp_config.servers:
         try:

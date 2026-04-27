@@ -9,15 +9,13 @@ from typing import Any
 from mcp import ClientSession, StdioServerParameters
 from mcp.client.stdio import stdio_client
 
-from infrastructure.config import McpServerConfig
+from infrastructure.config import McpServerConfig, load_mcp_config, McpConfig
 
 logger = logging.getLogger(__name__)
 
 # Default client-side timeout for any MCP tool call.
 # Acts as a safety net when the server-side timeout fails or the stdio channel stalls.
 # claude_code calls can take a long time, so we set a generous default.
-_DEFAULT_TOOL_TIMEOUT_S = 3600  # 60 minutes
-
 
 @dataclass
 class McpToolInfo:
@@ -30,10 +28,11 @@ class McpToolInfo:
 class McpManager:
     """Manages connections to MCP servers and provides tool discovery/invocation."""
 
-    def __init__(self) -> None:
+    def __init__(self,mcp_config) -> None:
         self._sessions: dict[str, ClientSession] = {}
         self._exit_stacks: dict[str, AsyncExitStack] = {}
         self._tools: dict[str, list[McpToolInfo]] = {}
+        self.mcp_config: McpConfig=mcp_config
 
     def list_servers(self) -> list[str]:
         return list(self._sessions.keys())
@@ -99,13 +98,13 @@ class McpManager:
         server_name: str,
         tool_name: str,
         arguments: dict[str, Any],
-        timeout_s: float = _DEFAULT_TOOL_TIMEOUT_S,
     ) -> str:
         """Call a tool on an MCP server and return the result as text.
 
         A client-side timeout prevents the swarm from hanging when the
         MCP server process stalls or the stdio channel blocks.
         """
+        timeout_s=self.mcp_config.base_config.tool_timeout
         session = self._sessions.get(server_name)
         if session is None:
             raise ValueError(f"Not connected to MCP server: {server_name}")
