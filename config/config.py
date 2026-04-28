@@ -302,6 +302,20 @@ def load_role_feishu_open_ids(project_dir: Path) -> dict[str, str]:
     }
 
 
+@dataclass
+class SkillAssignmentConfig:
+    skills: dict[str, list[str]]
+    mcp_servers: dict[str, list[str]]
+
+
+def load_skill_assignment_config(config_dir: Path) -> SkillAssignmentConfig:
+    raw = _load_yaml(config_dir / "skill.yaml")
+    return SkillAssignmentConfig(
+        skills=raw.get("skills", {}),
+        mcp_servers=raw.get("mcp_servers", {}),
+    )
+
+
 def load_knowledge_config(project_dir: Path) -> KnowledgeConfig:
     """Load knowledge sharing config from .env and harness.yaml."""
     env = _load_dotenv(project_dir / ".env")

@@ -62,6 +62,7 @@ async def main() -> None:
             except Exception as e:
                 logger.error("Failed to connect MCP server '%s': %s", server_cfg.name, e)
 
+        # 检查是否有 skill缺少必要的 MCP 工具。
         skill_registry.connected_servers = connected_servers
         for issue in skill_registry.validate_alignment():
             logger.warning(

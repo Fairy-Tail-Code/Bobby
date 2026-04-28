@@ -21,8 +21,9 @@ from agents.user import (
     create_feishu_channel_proxies,
 )
 from config.config import (
-    ContextConfig, HarnessConfig, LlmConfig,
+    ContextConfig, HarnessConfig, LlmConfig, SkillAssignmentConfig,
     DingTalkConfig, FeishuConfig, SmtpConfig, ImapConfig,
+    load_skill_assignment_config,
 )
 from infrastructure.context.auto_compact import AutoCompactTransform
 from infrastructure.context.snip import create_snip_transform
@@ -40,52 +41,15 @@ _CHANNEL_MODES = {"email", "dingtalk", "feishu"}
 
 SKILLS_DIR = Path(__file__).parent.parent / "skills"
 
-# Skill assignments per agent
-PLANNER_SKILLS = [
-    "repo-surveyor",
-    "fullstack-analyst",
-    "backend-analyst",
-    "git-operator",
-]
+_skill_assignment: SkillAssignmentConfig | None = None
 
-GENERATOR_SKILLS = [
-    "claude-code",
-    "backend-delivery",
-    "frontend-delivery",
-    "bug-fixer",
-    "git-operator",
-    "docker-operator",
-    "runtime-python-toolchain",
-    "runtime-node-toolchain",
-    "runtime-go-toolchain",
-]
 
-EVALUATOR_SKILLS = [
-    "browser-tester",
-    "api-tester",
-    "verification-gate",
-    "test-writer",
-]
-
-SINGLE_SKILLS = [
-    "claude-code",
-    "repo-surveyor",
-    "fullstack-analyst",
-    "backend-analyst",
-    "backend-delivery",
-    "frontend-delivery",
-    "bug-fixer",
-    "git-operator",
-    "docker-operator",
-]
-
-# MCP server assignments per agent (must cover all MCP dependencies declared in assigned skills)
-PM_MCP_SERVERS = ["workspace", "shell"]
-PLANNER_MCP_SERVERS = ["workspace", "shell", "git", "gitee"]
-GENERATOR_MCP_SERVERS = ["shell", "git", "workspace", "browser", "docker", "database", "claude_code"]
-EVALUATOR_MCP_SERVERS = ["browser", "shell", "http_api", "workspace"]
-
-SINGLE_MCP_SERVERS = ["shell", "git", "gitee", "workspace", "browser", "claude_code"]
+def _get_skill_assignment() -> SkillAssignmentConfig:
+    global _skill_assignment
+    if _skill_assignment is None:
+        config_dir = Path(__file__).parent.parent / "config"
+        _skill_assignment = load_skill_assignment_config(config_dir)
+    return _skill_assignment
 
 
 
@@ -139,7 +103,7 @@ def create_pm_agent(
     """Create a PM agent with basic MCP tools (workspace, shell)."""
     agent = create_pm(llm_config)
     if mcp_manager:
-        register_tools_for_agent(agent, mcp_manager, PM_MCP_SERVERS)
+        register_tools_for_agent(agent, mcp_manager, _get_skill_assignment().mcp_servers.get("pm", []))
     return agent
 
 
@@ -150,11 +114,12 @@ def create_planner_agent(
 ) -> ConversableAgent:
     """Create a Planner agent with analysis skills."""
     agent = create_planner(llm_config)
+    sa = _get_skill_assignment()
     if mcp_manager:
-        register_tools_for_agent(agent, mcp_manager, PLANNER_MCP_SERVERS)
+        register_tools_for_agent(agent, mcp_manager, sa.mcp_servers.get("planner", []))
     if skill_registry:
-        inject_skill_summaries(agent, PLANNER_SKILLS, skill_registry)
-        register_load_skill_tool(agent, skill_registry, PLANNER_SKILLS)
+        inject_skill_summaries(agent, sa.skills.get("planner", []), skill_registry)
+        register_load_skill_tool(agent, skill_registry, sa.skills.get("planner", []))
     return agent
 
 
@@ -165,10 +130,11 @@ def create_generator_agent(
 ) -> ConversableAgent:
     """Create a Generator agent with MCP tools and build skills."""
     agent = create_generator(llm_config)
-    register_tools_for_agent(agent, mcp_manager, GENERATOR_MCP_SERVERS)
+    sa = _get_skill_assignment()
+    register_tools_for_agent(agent, mcp_manager, sa.mcp_servers.get("generator", []))
     if skill_registry:
-        inject_skill_summaries(agent, GENERATOR_SKILLS, skill_registry)
-        register_load_skill_tool(agent, skill_registry, GENERATOR_SKILLS)
+        inject_skill_summaries(agent, sa.skills.get("generator", []), skill_registry)
+        register_load_skill_tool(agent, skill_registry, sa.skills.get("generator", []))
     return agent
 
 
@@ -179,10 +145,11 @@ def create_evaluator_agent(
 ) -> ConversableAgent:
     """Create an Evaluator agent with browser/shell tools and testing skills."""
     agent = create_evaluator(llm_config)
-    register_tools_for_agent(agent, mcp_manager, EVALUATOR_MCP_SERVERS)
+    sa = _get_skill_assignment()
+    register_tools_for_agent(agent, mcp_manager, sa.mcp_servers.get("evaluator", []))
     if skill_registry:
-        inject_skill_summaries(agent, EVALUATOR_SKILLS, skill_registry)
-        register_load_skill_tool(agent, skill_registry, EVALUATOR_SKILLS)
+        inject_skill_summaries(agent, sa.skills.get("evaluator", []), skill_registry)
+        register_load_skill_tool(agent, skill_registry, sa.skills.get("evaluator", []))
     return agent
 
 def creat_user_agent(
@@ -199,10 +166,11 @@ def create_single_agent(
 ) -> ConversableAgent:
     """Create the all-in-one Assistant agent for single mode."""
     agent = create_single(llm_config)
-    register_tools_for_agent(agent, mcp_manager, SINGLE_MCP_SERVERS)
+    sa = _get_skill_assignment()
+    register_tools_for_agent(agent, mcp_manager, sa.mcp_servers.get("single", []))
     if skill_registry:
-        inject_skill_summaries(agent, SINGLE_SKILLS, skill_registry)
-        register_load_skill_tool(agent, skill_registry, SINGLE_SKILLS)
+        inject_skill_summaries(agent, sa.skills.get("single", []), skill_registry)
+        register_load_skill_tool(agent, skill_registry, sa.skills.get("single", []))
     return agent
 
 
