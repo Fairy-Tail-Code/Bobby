@@ -1,0 +1,54 @@
+harness:
+  mode: swarm              # "swarm" (专家模式) | "single" (普通模式)
+  evaluation:
+    score_threshold: 7
+    dimensions:   #
+      - name: design_quality
+        weight: high
+        threshold: 7
+      - name: originality
+        weight: high
+        threshold: 7
+      - name: craftsmanship
+        weight: low
+        threshold: 5
+      - name: functionality
+        weight: low
+        threshold: 5
+
+  tech_stack:
+    frontend: "react+vite"
+    backend: "fastapi"
+    database: "sqlite"
+    version_control: "git"
+
+  context:
+    enabled: true
+    # Level 1: Snip Compact — keep only the most recent messages
+    max_messages: 500
+    keep_first_message: true
+    # Level 4: Auto Compact — LLM summarization when approaching token limit
+    max_tokens: 200000
+    auto_compact_enabled: true
+    max_rounds: 500
+
+  hitl:
+    mode: email              # "stdin" | "email" | "dingtalk" | "feishu"  # 这个mode设置不影响server，server只支持飞书，默认也是飞书
+    polling_interval: 30     # seconds between polls
+    timeout: 3600            # max seconds to wait for a reply
+    subject_prefix: "[OpenHarness]"
+
+  acpx:                       # claude -p delegation config (field kept as 'acpx' for backwards compat)
+    model: sonnet             # Claude model alias (sonnet, opus, etc.)
+    default_timeout: 600      # 单次任务超时（秒）
+    max_retries: 2            # 失败后最大重试次数
+  session:
+    session_dir: session/
+
+  knowledge:
+    enabled: true                     # 是否启用知识收集和同步
+    server_url: "http://localhost:8900" # 中央知识服务器地址
+    sync_interval_seconds: 300         # 同步间隔（秒）
+    offline_enabled: true              # 离线模式下队列缓存
+    pull_enabled: true                 # 是否从服务器拉取共享经验
+    pull_categories: []                # 拉取的经验类别（空=全部）

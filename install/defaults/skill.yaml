@@ -1,0 +1,43 @@
+# Skill assignments per agent role
+skills:
+  planner:
+    - repo-surveyor
+    - fullstack-analyst
+    - backend-analyst
+    - git-operator
+
+  generator:
+    - claude-code
+    - backend-delivery
+    - frontend-delivery
+    - bug-fixer
+    - git-operator
+    - docker-operator
+    - runtime-python-toolchain
+    - runtime-node-toolchain
+    - runtime-go-toolchain
+
+  evaluator:
+    - browser-tester
+    - api-tester
+    - verification-gate
+    - test-writer
+
+  single:
+    - claude-code
+    - repo-surveyor
+    - fullstack-analyst
+    - backend-analyst
+    - backend-delivery
+    - frontend-delivery
+    - bug-fixer
+    - git-operator
+    - docker-operator
+
+# MCP server assignments per agent (must cover all MCP dependencies declared in assigned skills)
+mcp_servers:
+  pm: ["workspace", "shell"]
+  planner: ["workspace", "shell", "git", "gitee"]
+  generator: ["shell", "git", "workspace", "browser", "docker", "database", "claude_code"]
+  evaluator: ["browser", "shell", "http_api", "workspace"]
+  single: ["shell", "git", "gitee", "workspace", "browser", "claude_code"]

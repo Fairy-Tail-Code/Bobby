@@ -1,0 +1,63 @@
+mcp_servers:
+  shell:
+    transport: stdio
+    command: harness
+    args: ["_mcp", "shell"]
+    startup_timeout: 30
+
+  git:
+    transport: stdio
+    command: harness
+    args: ["_mcp", "git"]
+    startup_timeout: 30
+
+  browser:
+    transport: stdio
+    command: harness
+    args: ["_mcp", "browser"]
+    startup_timeout: 30
+
+  workspace:
+    transport: stdio
+    command: harness
+    args: ["_mcp", "workspace"]
+    startup_timeout: 30
+
+  docker:
+    transport: stdio
+    command: harness
+    args: ["_mcp", "docker"]
+    startup_timeout: 30
+
+  database:
+    transport: stdio
+    command: harness
+    args: ["_mcp", "database"]
+    startup_timeout: 30
+
+  http_api:
+    transport: stdio
+    command: harness
+    args: ["_mcp", "http_api"]
+    startup_timeout: 30
+
+  docs_web:
+    transport: stdio
+    command: harness
+    args: ["_mcp", "docs_web"]
+    startup_timeout: 30
+
+  gitee:
+    transport: stdio
+    command: harness
+    args: ["_mcp", "gitee"]
+    startup_timeout: 30
+
+  claude_code:
+    transport: stdio
+    command: harness
+    args: ["_mcp", "claude_code"]
+    startup_timeout: 10
+
+base_config:
+  tool_timeout: 1800
