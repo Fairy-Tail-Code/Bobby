@@ -6,7 +6,7 @@ from autogen import ConversableAgent
 from autogen.agentchat.group.patterns import DefaultPattern
 from autogen.agentchat.group.multi_agent_chat import initiate_group_chat, a_initiate_group_chat
 
-from infrastructure.config import HarnessConfig
+from config.config import HarnessConfig
 
 
 def run_swarm(

@@ -1,6 +1,5 @@
 import pytest
 from infrastructure.mcp.manager import McpManager, McpToolInfo
-from infrastructure.config import McpServerConfig
 
 
 def test_mcp_manager_init():

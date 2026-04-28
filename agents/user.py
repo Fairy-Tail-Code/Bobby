@@ -9,7 +9,7 @@ from agents.channel_proxy import create_channel_proxies
 from infrastructure.channel.channel_email import EmailChannel
 from infrastructure.channel.channel_dingtalk import DingTalkChannel
 from infrastructure.channel.channel_feishu import FeishuChannel
-from infrastructure.config import (
+from config.config import (
     LlmConfig, SmtpConfig, ImapConfig, HitlConfig,
     DingTalkConfig, FeishuConfig,
 )

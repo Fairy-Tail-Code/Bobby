@@ -159,7 +159,7 @@ git commit -m "feat: project scaffold with config templates"
 # tests/test_config.py
 import pytest
 from pathlib import Path
-from infrastructure.config import load_llm_config, load_mcp_config, load_harness_config
+from config.config import load_llm_config, load_mcp_config, load_harness_config
 
 
 def test_load_llm_config(tmp_path):
@@ -378,7 +378,7 @@ git commit -m "feat: configuration system with YAML loading"
 import pytest
 from unittest.mock import AsyncMock, MagicMock, patch
 from infrastructure.mcp.manager import McpManager, McpToolInfo
-from infrastructure.config import McpServerConfig
+from config.config import McpServerConfig
 
 
 @pytest.fixture
@@ -438,7 +438,7 @@ from typing import Any
 from mcp import ClientSession, StdioServerParameters
 from mcp.client.stdio import stdio_client
 
-from infrastructure.config import McpServerConfig
+from config.config import McpServerConfig
 
 logger = logging.getLogger(__name__)
 
@@ -1120,7 +1120,7 @@ git commit -m "feat: agent system prompts with evaluation criteria"
 import pytest
 from unittest.mock import MagicMock
 from agents.factory import create_planner, create_generator, create_evaluator
-from infrastructure.config import LlmConfig, LlmAgentConfig
+from config.config import LlmConfig, LlmAgentConfig
 
 
 @pytest.fixture
@@ -1164,7 +1164,7 @@ from __future__ import annotations
 from autogen import ConversableAgent
 
 from agents.prompts.loader import load_prompt
-from infrastructure.config import LlmConfig
+from config.config import LlmConfig
 
 
 def create_planner(llm_config: LlmConfig) -> ConversableAgent:
@@ -1191,7 +1191,7 @@ from __future__ import annotations
 from autogen import ConversableAgent
 
 from agents.prompts.loader import load_prompt
-from infrastructure.config import LlmConfig
+from config.config import LlmConfig
 
 
 def create_generator(llm_config: LlmConfig) -> ConversableAgent:
@@ -1218,7 +1218,7 @@ from __future__ import annotations
 from autogen import ConversableAgent
 
 from agents.prompts.loader import load_prompt
-from infrastructure.config import LlmConfig
+from config.config import LlmConfig
 
 
 def create_evaluator(llm_config: LlmConfig) -> ConversableAgent:
@@ -1248,7 +1248,7 @@ from autogen import ConversableAgent
 from agents.planner import create_planner
 from agents.generator import create_generator
 from agents.evaluator import create_evaluator
-from infrastructure.config import LlmConfig
+from config.config import LlmConfig
 from infrastructure.mcp.manager import McpManager
 from infrastructure.mcp.tool_bridge import register_tools_for_agent
 
@@ -1273,8 +1273,8 @@ def create_evaluator_agent(llm_config: LlmConfig, mcp_manager: McpManager) -> Co
 
 
 def create_all_agents(
-    llm_config: LlmConfig,
-    mcp_manager: McpManager,
+        llm_config: LlmConfig,
+        mcp_manager: McpManager,
 ) -> dict[str, ConversableAgent]:
     """Create all three agents with their tools."""
     return {
@@ -1382,14 +1382,14 @@ from typing import Any
 
 from autogen import ConversableAgent, GroupChat, GroupChatManager
 
-from infrastructure.config import LlmConfig, HarnessConfig
+from config.config import LlmConfig, HarnessConfig
 from orchestration.termination import create_termination_check
 
 
 def create_group_chat(
-    agents: list[ConversableAgent],
-    llm_config: LlmConfig,
-    harness_config: HarnessConfig,
+        agents: list[ConversableAgent],
+        llm_config: LlmConfig,
+        harness_config: HarnessConfig,
 ) -> GroupChatManager:
     """Create a GroupChatManager with auto speaker selection.
 
@@ -1450,7 +1450,7 @@ import logging
 import sys
 from pathlib import Path
 
-from infrastructure.config import load_llm_config, load_mcp_config, load_harness_config
+from config.config import load_llm_config, load_mcp_config, load_harness_config
 from infrastructure.mcp.manager import McpManager
 from agents.factory import create_all_agents
 from orchestration.group import create_group_chat
@@ -1551,11 +1551,10 @@ import pytest
 from pathlib import Path
 from unittest.mock import AsyncMock, MagicMock, patch
 
-from infrastructure.config import load_llm_config, load_mcp_config, load_harness_config
+from config.config import load_llm_config, load_mcp_config, load_harness_config
 from agents.factory import create_planner, create_generator, create_evaluator
 from orchestration.group import create_group_chat
 from orchestration.termination import create_termination_check
-
 
 CONFIG_DIR = Path(__file__).parent.parent / "config"
 

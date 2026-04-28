@@ -5,12 +5,15 @@ on subsequent messages, terminates on command, and supports session resume.
 """
 from __future__ import annotations
 
+import asyncio
+import sys
+from datetime import datetime
 import json
 import logging
 import re
 from pathlib import Path
 
-from infrastructure.config import HarnessConfig, LlmConfig
+from config.config import HarnessConfig, LlmConfig
 from infrastructure.feishu_bot import FeishuBotService
 from infrastructure.mcp.manager import McpManager
 from infrastructure.skills.registry import SkillRegistry
@@ -22,6 +25,8 @@ _RESUME_PATTERN = re.compile(r"^harness\s+resume\s+([0-9a-fA-F]{8})$", re.IGNORE
 _LIST_PATTERN = re.compile(r"^harness\s+list$", re.IGNORECASE)
 _MODE_NORMAL_PATTERN = re.compile(r"^harness\s+(?:mode\s+)?(?:normal|普通|普通模式)$", re.IGNORECASE)
 _MODE_EXPERT_PATTERN = re.compile(r"^harness\s+(?:mode\s+)?(?:expert|专家|专家模式|swarm)$", re.IGNORECASE)
+
+_RESTART_PATTERN = re.compile(r"^harness\s+restart$", re.IGNORECASE)
 
 
 class SessionManager:
@@ -44,6 +49,7 @@ class SessionManager:
         harness_config: HarnessConfig,
         skill_registry: SkillRegistry | None = None,
         session_dir: str = "session",
+        restart_event: asyncio.Event | None = None,
     ) -> None:
         self._bot = bot
         self._mcp_manager = mcp_manager
@@ -51,6 +57,7 @@ class SessionManager:
         self._harness_config = harness_config
         self._skill_registry = skill_registry
         self._session_dir = session_dir
+        self._restart_event = restart_event
         self._sessions: dict[str, SwarmSession] = {}
         self._chat_modes: dict[str, str] = {}  # chat_id -> "swarm" | "single"
 
@@ -82,6 +89,15 @@ class SessionManager:
             await self._bot.send_text(chat_id, "已切换到专家模式 (多 Agent 协作)")
             return
 
+        # Check for restart command: "harness restart"
+        if _RESTART_PATTERN.match(stripped):
+            self.terminate_all()
+            if self._bot:
+                await self._bot.send_text(chat_id, "🔄 服务正在重启...")
+            if self._restart_event:
+                self._restart_event.set()
+            return
+
         # Check for terminate command
         if stripped.lower() in _TERMINATE_KEYWORDS:
             session = self._sessions.get(chat_id)
@@ -104,6 +120,7 @@ class SessionManager:
         if _LIST_PATTERN.match(stripped):
             await self._list_sessions(chat_id)
             return
+
 
         session = self._sessions.get(chat_id)
 
@@ -163,7 +180,7 @@ class SessionManager:
 
     async def _resume_session(self, chat_id: str, session_id: str) -> None:
         """Load a saved session snapshot and resume it in a new SwarmSession."""
-        snapshot_path = Path(self._session_dir) / f"snapshot_{session_id}.json"
+        snapshot_path = Path(self._session_dir) / f"{datetime.now():%Y-%m-%d %H-%M-%S}" / f"snapshot_{session_id}.json"
         if not snapshot_path.exists():
             await self._bot.send_text(chat_id, f"未找到会话ID: {session_id}")
             return

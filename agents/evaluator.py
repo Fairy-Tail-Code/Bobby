@@ -3,7 +3,7 @@ from __future__ import annotations
 from autogen import ConversableAgent
 
 from agents.prompts.loader import load_prompt
-from infrastructure.config import LlmConfig
+from config.config import LlmConfig
 
 
 def create_evaluator(llm_config: LlmConfig) -> ConversableAgent:

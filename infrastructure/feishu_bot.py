@@ -43,6 +43,7 @@ class FeishuBotService:
         self._lark_client: lark.Client | None = None
         self._ws_client: lark.ws.Client | None = None
         self._ws_thread: threading.Thread | None = None
+        self._ws_loop: asyncio.AbstractEventLoop | None = None
         self._started = False
 
     def start(self) -> None:
@@ -78,6 +79,20 @@ class FeishuBotService:
         self._ws_thread.start()
         logger.info("FeishuBotService WS client started")
 
+    def stop(self) -> None:
+        """Stop the WS client event loop and wait for the daemon thread to finish."""
+        self._started = False
+        # lark_oapi WS Client 没有 stop 方法，start() 通过 loop.run_until_complete() 永久阻塞。
+        # 通过 call_soon_threadsafe(loop.stop) 打断阻塞，让线程自然退出。
+        if self._ws_loop and self._ws_loop.is_running():
+            self._ws_loop.call_soon_threadsafe(self._ws_loop.stop)
+        if self._ws_thread and self._ws_thread.is_alive():
+            self._ws_thread.join(timeout=5)
+        self._ws_loop = None
+        self._ws_client = None
+        self._ws_thread = None
+        logger.info("FeishuBotService stopped")
+
     def set_main_loop(self, loop: asyncio.AbstractEventLoop) -> None:
         """Set the main event loop reference for cross-thread coroutine scheduling."""
         self._main_loop = loop
@@ -88,6 +103,7 @@ class FeishuBotService:
         new_loop = asyncio.new_event_loop()
         asyncio.set_event_loop(new_loop)
         ws_mod.loop = new_loop
+        self._ws_loop = new_loop
 
         try:
             # 在 daemon 线程中启动 WS Client（独立事件循环）
@@ -97,6 +113,8 @@ class FeishuBotService:
             self._ws_client.start()
         except Exception:
             logger.exception("FeishuBotService WS client error")
+        finally:
+            new_loop.close()
 
     def _on_ws_message(self, event) -> None:
         """Called by Feishu SDK in WS thread when a message arrives."""

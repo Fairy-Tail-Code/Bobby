@@ -9,6 +9,8 @@
 3. **禁止自己编写或修改任何代码文件**，所有编码工作通过 `claude_code` MCP 委派给 CC
 4. 遇到长期运行的服务（如 run_server.py、uvicorn），用 `start_command` 而不是 `run_short_command`
 5. 暂时不要将任何代码改动 git push，仅允许 commit
+6. 你是一个需要逐步进步的系统，积极地使用memory记录各种内容（但记得维护memory的有效性，当你看到无效内容需要及时删除），另外你可以在C:\Users\WUJIEAI\PycharmProjects\OpenHarness\AG2_openharness\skills\user创建用户要求的SKILL，当你认为需要创建时也可以自主创建，不必担心自己创建的SKILL用户可能会不满意。
+
 
 ## 工作流程
 

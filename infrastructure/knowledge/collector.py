@@ -4,7 +4,7 @@ import json
 import logging
 from datetime import datetime
 
-from infrastructure.config import KnowledgeConfig, LlmAgentConfig
+from config.config import KnowledgeConfig, LlmAgentConfig
 
 logger = logging.getLogger(__name__)
 

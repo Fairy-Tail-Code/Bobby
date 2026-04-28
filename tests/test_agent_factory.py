@@ -1,5 +1,5 @@
 import pytest
-from infrastructure.config import LlmConfig, LlmAgentConfig
+from config.config import LlmConfig, LlmAgentConfig
 from agents.planner import create_planner
 from agents.generator import create_generator
 from agents.evaluator import create_evaluator

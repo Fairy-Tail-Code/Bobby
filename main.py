@@ -9,7 +9,7 @@ import sys
 from datetime import datetime
 from pathlib import Path
 
-from infrastructure.config import (
+from config.config import (
     load_llm_config, load_mcp_config, load_harness_config,
     load_smtp_config, load_imap_config, load_role_emails,
     load_dingtalk_config, load_role_dingtalk_ids,

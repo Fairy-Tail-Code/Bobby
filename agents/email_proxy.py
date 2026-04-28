@@ -7,19 +7,17 @@ from __future__ import annotations
 
 import asyncio
 import email
-import imaplib
 import logging
 import smtplib
 import time
 import uuid
 from email.mime.text import MIMEText
 from email.mime.multipart import MIMEMultipart
-from email.utils import make_msgid, parseaddr
 import re
 
 from autogen import UserProxyAgent
 
-from infrastructure.config import SmtpConfig, ImapConfig, HitlConfig
+from config.config import SmtpConfig, ImapConfig, HitlConfig
 
 from autogen.io.base import AsyncInputStream
 

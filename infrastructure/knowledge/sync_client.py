@@ -5,7 +5,7 @@ from datetime import datetime
 
 import httpx
 
-from infrastructure.config import KnowledgeConfig
+from config.config import KnowledgeConfig
 from infrastructure.knowledge.local_store import LocalKnowledgeStore
 
 logger = logging.getLogger(__name__)

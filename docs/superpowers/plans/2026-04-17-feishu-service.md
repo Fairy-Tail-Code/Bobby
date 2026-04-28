@@ -465,7 +465,7 @@ from agents.factory import (
 )
 from agents.channel_proxy import ChannelUserProxyAgent, ROLE_DESCRIPTIONS
 from infrastructure.channel.channel_feishu_service import ChannelFeishuService
-from infrastructure.config import (
+from config.config import (
     HarnessConfig, LlmConfig, HitlConfig, FeishuConfig,
 )
 from infrastructure.feishu_bot import FeishuBotService
@@ -732,7 +732,7 @@ from __future__ import annotations
 
 import logging
 
-from infrastructure.config import (
+from config.config import (
     HarnessConfig, LlmConfig, FeishuConfig,
 )
 from infrastructure.feishu_bot import FeishuBotService
@@ -756,13 +756,13 @@ class SessionManager:
     """
 
     def __init__(
-        self,
-        bot: FeishuBotService,
-        mcp_manager: McpManager,
-        llm_config: LlmConfig,
-        harness_config: HarnessConfig,
-        skill_registry: SkillRegistry | None = None,
-        session_dir: str = "session",
+            self,
+            bot: FeishuBotService,
+            mcp_manager: McpManager,
+            llm_config: LlmConfig,
+            harness_config: HarnessConfig,
+            skill_registry: SkillRegistry | None = None,
+            session_dir: str = "session",
     ) -> None:
         self._bot = bot
         self._mcp_manager = mcp_manager
@@ -777,7 +777,7 @@ class SessionManager:
         return sum(1 for s in self._sessions.values() if s.is_running)
 
     async def handle_message(
-        self, chat_id: str, open_id: str, chat_type: str, text: str,
+            self, chat_id: str, open_id: str, chat_type: str, text: str,
     ) -> None:
         """Route an incoming Feishu message.
 
@@ -867,7 +867,7 @@ import signal
 import sys
 from pathlib import Path
 
-from infrastructure.config import (
+from config.config import (
     load_llm_config, load_mcp_config, load_harness_config,
     load_feishu_config,
 )

@@ -20,7 +20,7 @@ from agents.user import (
     create_dingtalk_channel_proxies,
     create_feishu_channel_proxies,
 )
-from infrastructure.config import (
+from config.config import (
     ContextConfig, HarnessConfig, LlmConfig,
     DingTalkConfig, FeishuConfig, SmtpConfig, ImapConfig,
 )

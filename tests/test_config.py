@@ -1,6 +1,5 @@
 import pytest
-from pathlib import Path
-from infrastructure.config import load_llm_config, load_mcp_config, load_harness_config
+from config.config import load_llm_config, load_mcp_config, load_harness_config
 
 
 def test_load_llm_config(tmp_path):

@@ -188,7 +188,6 @@ def load_llm_config(project_dir: Path) -> LlmConfig:
         evaluator=_load_agent_env_config(env, "EVALUATOR"),
     )
 
-
 def load_mcp_config(config_dir: Path) -> McpConfig:
     mcp_servers = _load_yaml(config_dir / "mcp.yaml")["mcp_servers"]
     base_config = _load_yaml(config_dir / "mcp.yaml")["base_config"]

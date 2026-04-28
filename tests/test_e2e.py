@@ -1,7 +1,7 @@
 """End-to-end structural test — verifies wiring without MCP servers or LLM calls."""
 from pathlib import Path
 
-from infrastructure.config import load_llm_config, load_mcp_config, load_harness_config
+from config.config import load_llm_config, load_mcp_config, load_harness_config
 from agents.planner import create_planner
 from agents.generator import create_generator
 from agents.evaluator import create_evaluator

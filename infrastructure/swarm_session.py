@@ -31,7 +31,7 @@ from agents.factory import (
 )
 from agents.channel_proxy import ChannelUserProxyAgent, ROLE_DESCRIPTIONS
 from infrastructure.channel.channel_feishu_service import ChannelFeishuService
-from infrastructure.config import HarnessConfig, LlmConfig
+from config.config import HarnessConfig, LlmConfig
 from infrastructure.feishu_bot import FeishuBotService
 from infrastructure.mcp.manager import McpManager
 from infrastructure.skills.registry import SkillRegistry
@@ -124,6 +124,7 @@ class SwarmSession:
         self._prompt = prompt
         self._resume_messages = saved_messages
         self._is_resume = True
+        # start是一个同步方法，为了避免使用async def+await，因为不需要等待_run的结果，只需要在当前事件循环中执行_run就行
         self._task = asyncio.create_task(self._run())
         logger.info("SwarmSession resumed: chat_id=%s", self.chat_id)
 
@@ -462,7 +463,7 @@ class SwarmSession:
                 status=status,
                 rounds_used=len(messages),
             )
-            filepath = Path(self._session_dir) / f"snapshot_{session_id}.json"
+            filepath = Path(self._session_dir) / f"{datetime.now():%Y-%m-%d %H-%M-%S}" / f"snapshot_{session_id}.json"
             with open(filepath, "w", encoding="utf-8") as f:
                 json.dump(snapshot.to_dict(), f, ensure_ascii=False, indent=2)
             logger.info("Session snapshot saved: %s (status=%s)", filepath, status)

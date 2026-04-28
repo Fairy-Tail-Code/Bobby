@@ -9,7 +9,7 @@ from typing import Any
 from mcp import ClientSession, StdioServerParameters
 from mcp.client.stdio import stdio_client
 
-from infrastructure.config import McpServerConfig, load_mcp_config, McpConfig
+from config.config import McpServerConfig, McpConfig
 
 logger = logging.getLogger(__name__)
 
