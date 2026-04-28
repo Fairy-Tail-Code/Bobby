@@ -229,7 +229,7 @@ def install() -> None:
     if not marker_path.exists():
         marker = {
             "version": VERSION,
-            "installed_at": datetime.utcnow().isoformat() + "Z",
+            "installed_at": datetime.now(tz=None).isoformat(),
             "platform": sys.platform,
             "channel": "cli-install",
         }
