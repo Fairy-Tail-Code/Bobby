@@ -16,6 +16,7 @@ from pathlib import Path
 from config.config import HarnessConfig, LlmConfig
 from infrastructure.feishu_bot import FeishuBotService
 from infrastructure.mcp.manager import McpManager
+from infrastructure.paths import get_session_dir
 from infrastructure.skills.registry import SkillRegistry
 from infrastructure.swarm_session import SwarmSession, _TERMINATE_KEYWORDS
 
@@ -48,9 +49,11 @@ class SessionManager:
         llm_config: LlmConfig,
         harness_config: HarnessConfig,
         skill_registry: SkillRegistry | None = None,
-        session_dir: str = "session",
+        session_dir: str = "",
         restart_event: asyncio.Event | None = None,
     ) -> None:
+        if not session_dir:
+            session_dir = str(get_session_dir())
         self._bot = bot
         self._mcp_manager = mcp_manager
         self._llm_config = llm_config

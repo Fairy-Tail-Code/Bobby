@@ -32,6 +32,7 @@ from infrastructure.mcp.tool_bridge import register_tools_for_agent
 from infrastructure.skills.registry import SkillRegistry
 from infrastructure.skills.tool import register_load_skill_tool
 from infrastructure.skills.skill_inject import inject_skill_summaries
+from infrastructure.paths import get_user_skills_dir, get_config_dir, get_system_skills_dir
 
 
 logger = logging.getLogger(__name__)
@@ -39,15 +40,13 @@ logger = logging.getLogger(__name__)
 # HITL modes that use per-role channel proxies (not stdin)
 _CHANNEL_MODES = {"email", "dingtalk", "feishu"}
 
-SKILLS_DIR = Path(__file__).parent.parent / "skills"
-
 _skill_assignment: SkillAssignmentConfig | None = None
 
 
 def _get_skill_assignment() -> SkillAssignmentConfig:
     global _skill_assignment
     if _skill_assignment is None:
-        config_dir = Path(__file__).parent.parent / "config"
+        config_dir = get_config_dir()
         _skill_assignment = load_skill_assignment_config(config_dir)
     return _skill_assignment
 

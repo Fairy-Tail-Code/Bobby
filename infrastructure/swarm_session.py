@@ -84,9 +84,12 @@ class SwarmSession:
         llm_config: LlmConfig,
         harness_config: HarnessConfig,
         skill_registry: SkillRegistry | None = None,
-        session_dir: str = "session",
+        session_dir: str = "",
         mode: str | None = None,
     ) -> None:
+        if not session_dir:
+            from infrastructure.paths import get_session_dir
+            session_dir = str(get_session_dir())
         self.chat_id = chat_id
         self._bot = bot
         self._mcp_manager = mcp_manager
