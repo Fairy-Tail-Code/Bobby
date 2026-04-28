@@ -1,0 +1,81 @@
+name: Build & Release
+
+on:
+  push:
+    tags: ['v*']
+  workflow_dispatch:
+    inputs:
+      version:
+        description: 'Version tag (e.g. v1.0.0)'
+        required: true
+
+permissions:
+  contents: write
+
+jobs:
+  build:
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - os: windows-latest
+            artifact: harness.exe
+            platform: windows
+          - os: macos-latest
+            artifact: harness
+            platform: macos
+          - os: ubuntu-latest
+            artifact: harness
+            platform: linux
+
+    runs-on: ${{ matrix.os }}
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install uv
+        uses: astral-sh/setup-uv@v4
+
+      - name: Set up Python
+        run: uv python install 3.12
+
+      - name: Install dependencies
+        run: uv sync
+
+      - name: Build with PyInstaller
+        run: uv run pyinstaller harness.spec
+
+      - name: Rename binary with platform suffix
+        shell: bash
+        run: |
+          cd dist
+          if [ "${{ matrix.platform }}" = "windows" ]; then
+            mv harness.exe harness-windows.exe
+          elif [ "${{ matrix.platform }}" = "macos" ]; then
+            mv harness harness-macos
+          else
+            mv harness harness-linux
+          fi
+
+      - name: Upload artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: harness-${{ matrix.platform }}
+          path: dist/harness-*
+
+  release:
+    needs: build
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Download all artifacts
+        uses: actions/download-artifact@v4
+        with:
+          path: artifacts
+
+      - name: Create release
+        uses: softprops/action-gh-release@v2
+        with:
+          tag_name: ${{ github.event.inputs.version || github.ref_name }}
+          files: artifacts/**/*
+          generate_release_notes: true
