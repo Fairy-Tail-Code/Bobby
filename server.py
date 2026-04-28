@@ -8,9 +8,6 @@ from __future__ import annotations
 import asyncio
 import logging
 import signal
-from pathlib import Path
-
-import yaml
 
 from config.config import (
     load_llm_config, load_mcp_config, load_harness_config,
@@ -18,6 +15,9 @@ from config.config import (
 )
 from infrastructure.feishu_bot import FeishuBotService
 from infrastructure.mcp.manager import McpManager
+from infrastructure.paths import (
+    get_session_dir, get_system_skills_dir, get_user_skills_dir,
+)
 from infrastructure.session_manager import SessionManager
 from infrastructure.skills.registry import SkillRegistry
 
@@ -26,9 +26,6 @@ logging.basicConfig(
     format="%(asctime)s [%(name)s] %(levelname)s: %(message)s",
 )
 logger = logging.getLogger(__name__)
-
-PROJECT_DIR = Path(__file__).parent
-CONFIG_DIR = PROJECT_DIR / "config"
 
 
 async def main() -> None:
@@ -40,14 +37,14 @@ async def main() -> None:
 
         # 1. Load configs
         logger.info("Loading configs...")
-        llm_config = load_llm_config(PROJECT_DIR)
-        mcp_config = load_mcp_config(CONFIG_DIR)
-        harness_config = load_harness_config(CONFIG_DIR)
-        feishu_config = load_feishu_config(PROJECT_DIR)
+        llm_config = load_llm_config()
+        mcp_config = load_mcp_config()
+        harness_config = load_harness_config()
+        feishu_config = load_feishu_config()
 
         # 2. Initialize skill registry
-        system_skills_dir = PROJECT_DIR / "skills" / "system"
-        user_skills_dir = PROJECT_DIR / "skills" / "user"
+        system_skills_dir = get_system_skills_dir()
+        user_skills_dir = get_user_skills_dir()
         skill_registry = SkillRegistry(roots=[system_skills_dir,user_skills_dir])
         logger.info("Available skills: %s", [s.name for s in skill_registry.list_skills()])
 
@@ -70,10 +67,8 @@ async def main() -> None:
                 issue.skill_name, issue.missing_servers, issue.missing_servers,
             )
 
-        # 4. Get session dir from config
-        config_path = CONFIG_DIR / "harness.yaml"
-        config_data = yaml.safe_load(config_path.read_text(encoding="utf-8")) if config_path.exists() else {}
-        session_dir = config_data.get("harness", {}).get("session", {}).get("session_dir", "session")
+        # 4. Get session dir from paths
+        session_dir = str(get_session_dir())
 
         # 5. Create SessionManager (bot set later)
         session_manager = SessionManager(

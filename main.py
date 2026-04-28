@@ -17,10 +17,12 @@ from config.config import (
     load_knowledge_config,
 )
 from infrastructure.mcp.manager import McpManager
+from infrastructure.paths import (
+    get_session_dir, get_system_skills_dir, get_user_skills_dir,
+)
 from infrastructure.skills.registry import SkillRegistry
-from agents.factory import create_all_agents, SKILLS_DIR
+from agents.factory import create_all_agents
 from orchestration.group import arun_swarm
-from utils.yaml_reader import read_yaml
 
 logging.basicConfig(
     level=logging.INFO,
@@ -28,12 +30,8 @@ logging.basicConfig(
 )
 logger = logging.getLogger(__name__)
 
-PROJECT_DIR = Path(__file__).parent
-CONFIG_DIR = PROJECT_DIR / "config"
-
 # 获取session_file
-config = read_yaml("config/harness.yaml")
-session_dir = config.get("harness", {}).get("session", {}).get("session_dir", "session")
+session_dir = str(get_session_dir())
 timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
 session_file = os.path.join(session_dir, f"chat_history_{timestamp}.json")
 
@@ -42,15 +40,15 @@ async def run(prompt: str) -> None:
     """运行测试工具，传入用户提示词启动完整流程"""
     # 加载配置：从环境变量加载大模型配置
     logger.info("Loading LLM config from .env")
-    llm_config = load_llm_config(PROJECT_DIR)
+    llm_config = load_llm_config()
 
     # 加载 MCP 服务配置和测试工具配置
-    logger.info("Loading MCP and harness config from %s", CONFIG_DIR)
-    mcp_config = load_mcp_config(CONFIG_DIR)
-    harness_config = load_harness_config(CONFIG_DIR)
+    logger.info("Loading MCP and harness config")
+    mcp_config = load_mcp_config()
+    harness_config = load_harness_config()
 
     # 初始化技能注册器，扫描技能目录
-    skill_registry = SkillRegistry(roots=[SKILLS_DIR])
+    skill_registry = SkillRegistry(roots=[get_system_skills_dir(), get_user_skills_dir()])
     available_skills = skill_registry.list_skills()
     logger.info("Available skills: %s", [s.name for s in available_skills])
 
@@ -86,17 +84,17 @@ async def run(prompt: str) -> None:
         role_feishu_open_ids = None
 
         if harness_config.hitl.mode == "email":
-            smtp_config = load_smtp_config(PROJECT_DIR)
-            imap_config = load_imap_config(PROJECT_DIR)
-            role_emails = load_role_emails(PROJECT_DIR)
+            smtp_config = load_smtp_config()
+            imap_config = load_imap_config()
+            role_emails = load_role_emails()
             logger.info("HITL mode: email (SMTP=%s)", smtp_config.host)
         elif harness_config.hitl.mode == "dingtalk":
-            dingtalk_config = load_dingtalk_config(PROJECT_DIR)
-            role_dingtalk_ids = load_role_dingtalk_ids(PROJECT_DIR)
+            dingtalk_config = load_dingtalk_config()
+            role_dingtalk_ids = load_role_dingtalk_ids()
             logger.info("HITL mode: dingtalk (client_id=%s)", dingtalk_config.client_id[:6] + "..." if dingtalk_config.client_id else "N/A")
         elif harness_config.hitl.mode == "feishu":
-            feishu_config = load_feishu_config(PROJECT_DIR)
-            role_feishu_open_ids = load_role_feishu_open_ids(PROJECT_DIR)
+            feishu_config = load_feishu_config()
+            role_feishu_open_ids = load_role_feishu_open_ids()
             logger.info("HITL mode: feishu (app_id=%s)", feishu_config.app_id[:6] + "..." if feishu_config.app_id else "N/A")
 
         # 创建所有智能体：包含技能、转接逻辑、人工代理（如需）
@@ -197,7 +195,7 @@ async def run(prompt: str) -> None:
                                 if pull_resp and pull_resp.get("experiences"):
                                     written = write_pulled_experiences(
                                         pull_resp["experiences"],
-                                        knowledge_config.collected_dir + "/shared",
+                                        str(Path(knowledge_config.collected_dir) / "shared"),
                                     )
                                     logger.info("Wrote %d shared experiences to local memory", written)
                         else:
@@ -231,7 +229,7 @@ def main() -> None:
 
 async def _handle_knowledge_command(args: list[str]) -> None:
     """Handle knowledge subcommands: sync, search, status."""
-    knowledge_config = load_knowledge_config(PROJECT_DIR)
+    knowledge_config = load_knowledge_config()
     if not knowledge_config.enabled:
         print("Knowledge sharing is not enabled. Set knowledge.enabled=true in config/harness.yaml")
         sys.exit(1)
