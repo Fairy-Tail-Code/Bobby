@@ -7,6 +7,8 @@ from typing import Any
 
 import yaml
 
+from infrastructure.paths import get_home, get_config_dir, get_env_path
+
 
 @dataclass
 class LlmAgentConfig:
@@ -178,9 +180,9 @@ def _load_agent_env_config(env: dict[str, str], prefix: str) -> LlmAgentConfig:
     )
 
 
-def load_llm_config(project_dir: Path) -> LlmConfig:
-    """Load LLM config from .env file in the project directory."""
-    env = _load_dotenv(project_dir / ".env")
+def load_llm_config() -> LlmConfig:
+    """Load LLM config from .env file."""
+    env = _load_dotenv(get_env_path())
     return LlmConfig(
         pm=_load_agent_env_config(env, "PM"),
         planner=_load_agent_env_config(env, "PLANNER"),
@@ -188,17 +190,18 @@ def load_llm_config(project_dir: Path) -> LlmConfig:
         evaluator=_load_agent_env_config(env, "EVALUATOR"),
     )
 
-def load_mcp_config(config_dir: Path) -> McpConfig:
-    mcp_servers = _load_yaml(config_dir / "mcp.yaml")["mcp_servers"]
-    base_config = _load_yaml(config_dir / "mcp.yaml")["base_config"]
+def load_mcp_config() -> McpConfig:
+    mcp_yaml = _load_yaml(get_config_dir() / "mcp.yaml")
+    mcp_servers = mcp_yaml["mcp_servers"]
+    base_config = mcp_yaml["base_config"]
     servers = []
     for name, cfg in mcp_servers.items():
         servers.append(McpServerConfig(name=name, **cfg))
-    return McpConfig(servers=servers,base_config=base_config)
+    return McpConfig(servers=servers, base_config=base_config)
 
 
-def load_harness_config(config_dir: Path) -> HarnessConfig:
-    raw = _load_yaml(config_dir / "harness.yaml")["harness"]
+def load_harness_config() -> HarnessConfig:
+    raw = _load_yaml(get_config_dir() / "harness.yaml")["harness"]
     eval_cfg = raw["evaluation"]
     dimensions = [EvaluationDimension(**d) for d in eval_cfg["dimensions"]]
     ctx_raw = raw.get("context", {})
@@ -229,12 +232,12 @@ def load_harness_config(config_dir: Path) -> HarnessConfig:
             default_timeout=acpx_raw.get("default_timeout", 600),
             max_retries=acpx_raw.get("max_retries", 2),
         ) if (acpx_raw := raw.get("acpx", {})) else ClaudeCodeConfig(),
-        knowledge=load_knowledge_config(config_dir.parent),
+        knowledge=load_knowledge_config(),
     )
 
 
-def load_smtp_config(project_dir: Path) -> SmtpConfig:
-    env = _load_dotenv(project_dir / ".env")
+def load_smtp_config() -> SmtpConfig:
+    env = _load_dotenv(get_env_path())
     return SmtpConfig(
         host=env.get("SMTP_HOST", ""),
         port=int(env.get("SMTP_PORT", "587")),
@@ -244,8 +247,8 @@ def load_smtp_config(project_dir: Path) -> SmtpConfig:
     )
 
 
-def load_imap_config(project_dir: Path) -> ImapConfig:
-    env = _load_dotenv(project_dir / ".env")
+def load_imap_config() -> ImapConfig:
+    env = _load_dotenv(get_env_path())
     return ImapConfig(
         host=env.get("IMAP_HOST", ""),
         port=int(env.get("IMAP_PORT", "993")),
@@ -255,8 +258,8 @@ def load_imap_config(project_dir: Path) -> ImapConfig:
     )
 
 
-def load_role_emails(project_dir: Path) -> dict[str, str]:
-    env = _load_dotenv(project_dir / ".env")
+def load_role_emails() -> dict[str, str]:
+    env = _load_dotenv(get_env_path())
     return {
         "pm": env.get("HITL_PM_EMAIL", ""),
         "planner": env.get("HITL_PLANNER_EMAIL", ""),
@@ -265,8 +268,8 @@ def load_role_emails(project_dir: Path) -> dict[str, str]:
     }
 
 
-def load_dingtalk_config(project_dir: Path) -> DingTalkConfig:
-    env = _load_dotenv(project_dir / ".env")
+def load_dingtalk_config() -> DingTalkConfig:
+    env = _load_dotenv(get_env_path())
     return DingTalkConfig(
         client_id=env.get("DINGTALK_CLIENT_ID", ""),
         client_secret=env.get("DINGTALK_CLIENT_SECRET", ""),
@@ -274,16 +277,16 @@ def load_dingtalk_config(project_dir: Path) -> DingTalkConfig:
     )
 
 
-def load_feishu_config(project_dir: Path) -> FeishuConfig:
-    env = _load_dotenv(project_dir / ".env")
+def load_feishu_config() -> FeishuConfig:
+    env = _load_dotenv(get_env_path())
     return FeishuConfig(
         app_id=env.get("FEISHU_APP_ID", ""),
         app_secret=env.get("FEISHU_APP_SECRET", ""),
     )
 
 
-def load_role_dingtalk_ids(project_dir: Path) -> dict[str, str]:
-    env = _load_dotenv(project_dir / ".env")
+def load_role_dingtalk_ids() -> dict[str, str]:
+    env = _load_dotenv(get_env_path())
     return {
         "pm": env.get("HITL_PM_DINGTALK_USER_ID", ""),
         "planner": env.get("HITL_PLANNER_DINGTALK_USER_ID", ""),
@@ -292,8 +295,8 @@ def load_role_dingtalk_ids(project_dir: Path) -> dict[str, str]:
     }
 
 
-def load_role_feishu_open_ids(project_dir: Path) -> dict[str, str]:
-    env = _load_dotenv(project_dir / ".env")
+def load_role_feishu_open_ids() -> dict[str, str]:
+    env = _load_dotenv(get_env_path())
     return {
         "pm": env.get("HITL_PM_FEISHU_OPEN_ID", ""),
         "planner": env.get("HITL_PLANNER_FEISHU_OPEN_ID", ""),
@@ -308,18 +311,19 @@ class SkillAssignmentConfig:
     mcp_servers: dict[str, list[str]]
 
 
-def load_skill_assignment_config(config_dir: Path) -> SkillAssignmentConfig:
-    raw = _load_yaml(config_dir / "skill.yaml")
+def load_skill_assignment_config() -> SkillAssignmentConfig:
+    raw = _load_yaml(get_config_dir() / "skill.yaml")
     return SkillAssignmentConfig(
         skills=raw.get("skills", {}),
         mcp_servers=raw.get("mcp_servers", {}),
     )
 
 
-def load_knowledge_config(project_dir: Path) -> KnowledgeConfig:
+def load_knowledge_config() -> KnowledgeConfig:
     """Load knowledge sharing config from .env and harness.yaml."""
-    env = _load_dotenv(project_dir / ".env")
-    config_dir = project_dir / "config"
+    home = get_home()
+    env = _load_dotenv(get_env_path())
+    config_dir = get_config_dir()
     raw = {}
     if (config_dir / "harness.yaml").exists():
         harness_raw = _load_yaml(config_dir / "harness.yaml")
@@ -335,6 +339,6 @@ def load_knowledge_config(project_dir: Path) -> KnowledgeConfig:
         offline_enabled=raw.get("offline_enabled", True),
         pull_enabled=raw.get("pull_enabled", True),
         pull_categories=raw.get("pull_categories", []),
-        local_store_path=raw.get("local_store_path", ".openharness/knowledge_queue.db"),
-        collected_dir=raw.get("collected_dir", ".openharness/collected"),
+        local_store_path=raw.get("local_store_path", str(home / ".openharness" / "knowledge_queue.db")),
+        collected_dir=raw.get("collected_dir", str(home / ".openharness" / "collected")),
     )
