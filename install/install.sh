@@ -3,15 +3,15 @@
 # OpenHarness installer for macOS and Linux.
 #
 # Usage:
-#   curl -fsSL https://raw.githubusercontent.com/<org>/openharness/main/install/install.sh | bash
+#   curl -fsSL https://raw.githubusercontent.com/iamikunnnnn/Bobby/main/install/install.sh | bash
 #
 set -euo pipefail
 
 # ---------------------------------------------------------------------------
 # Config
 # ---------------------------------------------------------------------------
-REPO_OWNER="openharness"
-REPO_NAME="openharness"
+REPO_OWNER="iamikunnnnn"
+REPO_NAME="Bobby"
 VERSION="${INSTALL_VERSION:-latest}"
 CHANNEL="${INSTALL_CHANNEL:-curl-install}"
 HAS_PYTHON=false

@@ -8,7 +8,7 @@
     the ~/.openharness/ configuration directory.
 
 .EXAMPLE
-    irm https://raw.githubusercontent.com/<org>/openharness/main/install/install.ps1 | iex
+    irm https://raw.githubusercontent.com/iamikunnnnn/Bobby/main/install/install.ps1 | iex
 #>
 
 param(
@@ -23,8 +23,8 @@ $ErrorActionPreference = "Stop"
 # Config
 # ---------------------------------------------------------------------------
 
-$script:RepoOwner = "openharness"
-$script:RepoName = "openharness"
+$script:RepoOwner = "iamikunnnnn"
+$script:RepoName = "Bobby"
 $script:HasGit = $false
 $script:HasPython = $false
 $script:HasUv = $false
