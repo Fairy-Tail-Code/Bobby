@@ -20,6 +20,8 @@ from typing import Any
 from mcp.server.fastmcp import FastMCP
 from mcp.types import ToolAnnotations
 
+from infrastructure.paths import get_default_runtime_cwd
+
 claude_code_server = FastMCP("openharness-claude-code", log_level="ERROR")
 
 # ---------------------------------------------------------------------------
@@ -59,7 +61,7 @@ def _truncate(text: str | None, limit: int = _MAX_OUTPUT_CHARS) -> str:
 def _resolve_cwd(cwd: str | None) -> str:
     """Resolve the effective working directory."""
     if cwd is None:
-        return str(Path.cwd().resolve())
+        return str(get_default_runtime_cwd())
     return str(Path(cwd).expanduser().resolve(strict=False))
 
 

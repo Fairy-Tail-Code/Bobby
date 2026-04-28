@@ -6,8 +6,6 @@ on subsequent messages, terminates on command, and supports session resume.
 from __future__ import annotations
 
 import asyncio
-import sys
-from datetime import datetime
 import json
 import logging
 import re
@@ -17,6 +15,7 @@ from config.config import HarnessConfig, LlmConfig
 from infrastructure.feishu_bot import FeishuBotService
 from infrastructure.mcp.manager import McpManager
 from infrastructure.paths import get_session_dir
+from infrastructure.session_snapshots import find_snapshot_path, iter_snapshot_paths
 from infrastructure.skills.registry import SkillRegistry
 from infrastructure.swarm_session import SwarmSession, _TERMINATE_KEYWORDS
 
@@ -183,8 +182,8 @@ class SessionManager:
 
     async def _resume_session(self, chat_id: str, session_id: str) -> None:
         """Load a saved session snapshot and resume it in a new SwarmSession."""
-        snapshot_path = Path(self._session_dir) / f"{datetime.now():%Y-%m-%d %H-%M-%S}" / f"snapshot_{session_id}.json"
-        if not snapshot_path.exists():
+        snapshot_path = find_snapshot_path(self._session_dir, session_id)
+        if snapshot_path is None:
             await self._bot.send_text(chat_id, f"未找到会话ID: {session_id}")
             return
 
@@ -242,7 +241,7 @@ class SessionManager:
             return
 
         snapshots = []
-        for path in sorted(session_dir.glob("snapshot_*.json"), reverse=True):
+        for path in iter_snapshot_paths(session_dir):
             try:
                 with open(path, "r", encoding="utf-8") as f:
                     data = json.load(f)

@@ -10,6 +10,8 @@ from mcp.server.fastmcp import FastMCP
 from mcp.types import ToolAnnotations
 from filelock import FileLock
 
+from infrastructure.paths import get_default_runtime_cwd
+
 
 workspace_server = FastMCP("openharness-workspace", log_level="ERROR")
 
@@ -440,7 +442,7 @@ def _resolve_workspace_path(path: str, *, cwd: str | None) -> WorkspacePath:
 def _resolve_root(cwd: str | None) -> Path:
     """Resolve one optional cwd string into an absolute directory path."""
     if cwd is None:
-        return Path.cwd().resolve()
+        return get_default_runtime_cwd()
     return Path(cwd).expanduser().resolve(strict=False)
 
 

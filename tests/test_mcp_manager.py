@@ -1,9 +1,14 @@
 import pytest
+from config.config import McpBaseConfig, McpConfig
 from infrastructure.mcp.manager import McpManager, McpToolInfo
 
 
+def _empty_manager() -> McpManager:
+    return McpManager(McpConfig(servers=[], base_config=McpBaseConfig(tool_timeout=30)))
+
+
 def test_mcp_manager_init():
-    manager = McpManager()
+    manager = _empty_manager()
     assert manager.list_servers() == []
 
 
@@ -19,15 +24,15 @@ def test_mcp_manager_tool_info():
 
 
 def test_mcp_manager_get_tools_empty():
-    manager = McpManager()
+    manager = _empty_manager()
     assert manager.get_tools_for_server("shell") == []
 
 
 def test_mcp_manager_get_all_tools_empty():
-    manager = McpManager()
+    manager = _empty_manager()
     assert manager.get_all_tools() == {}
 
 
 def test_mcp_manager_get_tool_not_found():
-    manager = McpManager()
+    manager = _empty_manager()
     assert manager.get_tool("shell", "run_short_command") is None

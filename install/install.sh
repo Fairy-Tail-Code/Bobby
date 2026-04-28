@@ -148,7 +148,7 @@ install_harness_binary() {
 
     local tag
     tag=$( [[ "$VERSION" == "latest" ]] && echo "latest" || echo "v$VERSION" )
-    local os_name arch
+    local os_name arch asset_name
     os_name=$(uname -s | tr '[:upper:]' '[:lower:]')
     case "$(uname -m)" in
         x86_64|amd64) arch="x86_64" ;;
@@ -156,7 +156,13 @@ install_harness_binary() {
         *) arch="$(uname -m)" ;;
     esac
 
-    local url="https://github.com/$REPO_OWNER/$REPO_NAME/releases/$tag/download/harness-${os_name}-${arch}"
+    case "$os_name" in
+        linux) asset_name="harness-linux" ;;
+        darwin) asset_name="harness-macos" ;;
+        *) asset_name="harness-${os_name}" ;;
+    esac
+
+    local url="https://github.com/$REPO_OWNER/$REPO_NAME/releases/$tag/download/${asset_name}"
 
     info "Downloading harness binary..."
     if curl -fsSL -o "$dest" "$url"; then
@@ -165,7 +171,15 @@ install_harness_binary() {
         return 0
     fi
 
-    # Fallback: try generic name
+    # Fallback: try legacy arch-specific asset names.
+    url="https://github.com/$REPO_OWNER/$REPO_NAME/releases/$tag/download/harness-${os_name}-${arch}"
+    if curl -fsSL -o "$dest" "$url"; then
+        chmod +x "$dest"
+        ok "Downloaded harness to $dest"
+        return 0
+    fi
+
+    # Fallback: try generic name.
     url="https://github.com/$REPO_OWNER/$REPO_NAME/releases/$tag/download/harness"
     if curl -fsSL -o "$dest" "$url"; then
         chmod +x "$dest"
@@ -222,7 +236,7 @@ init_default_configs() {
         done
     fi
 
-    for file in harness.yaml mcp.yaml skill.yaml .env.example; do
+    for file in harness.yaml mcp.yaml skill.yaml; do
         local src="$defaults_dir/$file"
         local dst="$config_dir/$file"
         if [[ -f "$dst" ]]; then
@@ -233,9 +247,14 @@ init_default_configs() {
         fi
     done
 
+    local env_example_dst="$home/.env.example"
     # Copy .env.example as .env
     local env_dst="$home/.env"
     local env_src="$defaults_dir/.env.example"
+    if [[ ! -f "$env_example_dst" ]] && [[ -f "$env_src" ]]; then
+        cp "$env_src" "$env_example_dst"
+        ok "Installed .env.example"
+    fi
     if [[ ! -f "$env_dst" ]] && [[ -f "$env_src" ]]; then
         cp "$env_src" "$env_dst"
         ok "Installed .env"

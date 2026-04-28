@@ -34,6 +34,7 @@ from infrastructure.channel.channel_feishu_service import ChannelFeishuService
 from config.config import HarnessConfig, LlmConfig
 from infrastructure.feishu_bot import FeishuBotService
 from infrastructure.mcp.manager import McpManager
+from infrastructure.session_snapshots import build_snapshot_path
 from infrastructure.skills.registry import SkillRegistry
 
 
@@ -454,19 +455,24 @@ class SwarmSession:
         try:
             # Strip TERMINATE from last message to prevent immediate re-termination on resume
             messages = self._strip_terminate_from_last_message(messages)
+            created_at = datetime.now()
 
-            Path(self._session_dir).mkdir(parents=True, exist_ok=True)
             snapshot = SessionSnapshot(
                 session_id=session_id,
                 chat_id=self.chat_id,
-                timestamp=datetime.now().isoformat(),
+                timestamp=created_at.isoformat(),
                 prompt=self._prompt,
                 messages=messages,
                 max_rounds=self._harness_config.max_rounds,
                 status=status,
                 rounds_used=len(messages),
             )
-            filepath = Path(self._session_dir) / f"{datetime.now():%Y-%m-%d %H-%M-%S}" / f"snapshot_{session_id}.json"
+            filepath = build_snapshot_path(
+                self._session_dir,
+                session_id,
+                timestamp=created_at,
+            )
+            filepath.parent.mkdir(parents=True, exist_ok=True)
             with open(filepath, "w", encoding="utf-8") as f:
                 json.dump(snapshot.to_dict(), f, ensure_ascii=False, indent=2)
             logger.info("Session snapshot saved: %s (status=%s)", filepath, status)

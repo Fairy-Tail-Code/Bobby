@@ -1,62 +1,94 @@
-import pytest
-from config.config import load_llm_config, load_mcp_config, load_harness_config
+from __future__ import annotations
+
+import shutil
+import uuid
+from contextlib import contextmanager
+from pathlib import Path
+
+from config.config import (
+    load_harness_config,
+    load_knowledge_config,
+    load_llm_config,
+    load_mcp_config,
+)
 
 
-def test_load_llm_config(tmp_path):
-    env_file = tmp_path / ".env"
-    env_file.write_text(
-        "PM_MODEL=test-model\n"
-        "PM_BASE_URL=http://localhost:11434/v1\n"
-        "PM_API_KEY=test-key\n"
-        "PM_TEMPERATURE=0.7\n"
-        "PLANNER_MODEL=test-model\n"
-        "PLANNER_BASE_URL=http://localhost:11434/v1\n"
-        "PLANNER_API_KEY=test-key\n"
-        "PLANNER_TEMPERATURE=0.7\n"
-        "GENERATOR_MODEL=test-model\n"
-        "GENERATOR_BASE_URL=http://localhost:11434/v1\n"
-        "GENERATOR_API_KEY=test-key\n"
-        "GENERATOR_TEMPERATURE=0.4\n"
-        "EVALUATOR_MODEL=test-model\n"
-        "EVALUATOR_BASE_URL=http://localhost:11434/v1\n"
-        "EVALUATOR_API_KEY=test-key\n"
-        "EVALUATOR_TEMPERATURE=0.2\n"
-    )
-    config = load_llm_config(tmp_path)
-    assert config.pm.model == "test-model"
-    assert config.pm.temperature == 0.7
-    assert config.planner.model == "test-model"
-    assert config.planner.temperature == 0.7
-    assert config.generator.temperature == 0.4
-    assert config.evaluator.temperature == 0.2
+@contextmanager
+def _temp_openharness_home() -> Path:
+    temp_root = Path(__file__).resolve().parent.parent / ".test-tmp-config"
+    home_dir = temp_root / uuid.uuid4().hex
+    (home_dir / "config").mkdir(parents=True, exist_ok=True)
+    try:
+        yield home_dir
+    finally:
+        shutil.rmtree(home_dir, ignore_errors=True)
 
 
-def test_load_llm_config_default_temperature(tmp_path):
-    env_file = tmp_path / ".env"
-    env_file.write_text(
-        "PM_MODEL=m\n"
-        "PM_BASE_URL=http://x\n"
-        "PM_API_KEY=k\n"
-        "PLANNER_MODEL=m\n"
-        "PLANNER_BASE_URL=http://x\n"
-        "PLANNER_API_KEY=k\n"
-        "GENERATOR_MODEL=m\n"
-        "GENERATOR_BASE_URL=http://x\n"
-        "GENERATOR_API_KEY=k\n"
-        "EVALUATOR_MODEL=m\n"
-        "EVALUATOR_BASE_URL=http://x\n"
-        "EVALUATOR_API_KEY=k\n"
-    )
-    config = load_llm_config(tmp_path)
-    assert config.pm.temperature == 0.7
-    assert config.planner.temperature == 0.7
-    assert config.generator.temperature == 0.7
-    assert config.evaluator.temperature == 0.7
+def test_load_llm_config(monkeypatch) -> None:
+    with _temp_openharness_home() as home_dir:
+        monkeypatch.setenv("OPENHARNESS_HOME", str(home_dir))
+        (home_dir / ".env").write_text(
+            "PM_MODEL=test-model\n"
+            "PM_BASE_URL=http://localhost:11434/v1\n"
+            "PM_API_KEY=test-key\n"
+            "PM_TEMPERATURE=0.7\n"
+            "PLANNER_MODEL=test-model\n"
+            "PLANNER_BASE_URL=http://localhost:11434/v1\n"
+            "PLANNER_API_KEY=test-key\n"
+            "PLANNER_TEMPERATURE=0.7\n"
+            "GENERATOR_MODEL=test-model\n"
+            "GENERATOR_BASE_URL=http://localhost:11434/v1\n"
+            "GENERATOR_API_KEY=test-key\n"
+            "GENERATOR_TEMPERATURE=0.4\n"
+            "EVALUATOR_MODEL=test-model\n"
+            "EVALUATOR_BASE_URL=http://localhost:11434/v1\n"
+            "EVALUATOR_API_KEY=test-key\n"
+            "EVALUATOR_TEMPERATURE=0.2\n",
+            encoding="utf-8",
+        )
+
+        config = load_llm_config()
+
+        assert config.pm.model == "test-model"
+        assert config.pm.temperature == 0.7
+        assert config.planner.model == "test-model"
+        assert config.planner.temperature == 0.7
+        assert config.generator.temperature == 0.4
+        assert config.evaluator.temperature == 0.2
 
 
-def test_load_mcp_config(tmp_path):
-    mcp_yaml = tmp_path / "mcp.yaml"
-    mcp_yaml.write_text("""
+def test_load_llm_config_default_temperature(monkeypatch) -> None:
+    with _temp_openharness_home() as home_dir:
+        monkeypatch.setenv("OPENHARNESS_HOME", str(home_dir))
+        (home_dir / ".env").write_text(
+            "PM_MODEL=m\n"
+            "PM_BASE_URL=http://x\n"
+            "PM_API_KEY=k\n"
+            "PLANNER_MODEL=m\n"
+            "PLANNER_BASE_URL=http://x\n"
+            "PLANNER_API_KEY=k\n"
+            "GENERATOR_MODEL=m\n"
+            "GENERATOR_BASE_URL=http://x\n"
+            "GENERATOR_API_KEY=k\n"
+            "EVALUATOR_MODEL=m\n"
+            "EVALUATOR_BASE_URL=http://x\n"
+            "EVALUATOR_API_KEY=k\n",
+            encoding="utf-8",
+        )
+
+        config = load_llm_config()
+
+        assert config.pm.temperature == 0.7
+        assert config.planner.temperature == 0.7
+        assert config.generator.temperature == 0.7
+        assert config.evaluator.temperature == 0.7
+
+
+def test_load_mcp_config(monkeypatch) -> None:
+    with _temp_openharness_home() as home_dir:
+        monkeypatch.setenv("OPENHARNESS_HOME", str(home_dir))
+        (home_dir / "config" / "mcp.yaml").write_text(
+            """
 mcp_servers:
   shell:
     transport: stdio
@@ -67,19 +99,27 @@ mcp_servers:
     transport: stdio
     command: python
     args: ["-m", "test.git"]
-""")
-    config = load_mcp_config(tmp_path)
-    assert len(config.servers) == 2
-    assert config.servers[0].name == "shell"
-    assert config.servers[1].command == "python"
+base_config:
+  tool_timeout: 1800
+""".strip(),
+            encoding="utf-8",
+        )
+
+        config = load_mcp_config()
+
+        assert len(config.servers) == 2
+        assert config.servers[0].name == "shell"
+        assert config.servers[1].command == "python"
 
 
-def test_load_harness_config(tmp_path):
-    harness_yaml = tmp_path / "harness.yaml"
-    harness_yaml.write_text("""
+def test_load_harness_config(monkeypatch) -> None:
+    with _temp_openharness_home() as home_dir:
+        monkeypatch.setenv("OPENHARNESS_HOME", str(home_dir))
+        (home_dir / "config" / "harness.yaml").write_text(
+            """
 harness:
+  mode: swarm
   evaluation:
-    max_rounds: 15
     score_threshold: 7
     dimensions:
       - name: design_quality
@@ -95,14 +135,52 @@ harness:
         weight: low
         threshold: 5
   tech_stack:
-    frontend: "react+vite"
-    backend: "fastapi"
+    frontend: react+vite
+    backend: fastapi
   context:
-    strategy: "compaction"
-""")
-    config = load_harness_config(tmp_path)
-    assert config.max_rounds == 15
-    assert config.score_threshold == 7
-    assert len(config.dimensions) == 4
-    assert config.tech_stack["frontend"] == "react+vite"
-    assert config.context_strategy == "compaction"
+    enabled: true
+    max_messages: 60
+    keep_first_message: true
+    max_tokens: 80000
+    auto_compact_enabled: true
+    max_rounds: 15
+""".strip(),
+            encoding="utf-8",
+        )
+
+        config = load_harness_config()
+
+        assert config.max_rounds == 15
+        assert config.score_threshold == 7
+        assert len(config.dimensions) == 4
+        assert config.tech_stack["frontend"] == "react+vite"
+        assert config.context.enabled is True
+
+
+def test_load_knowledge_config_uses_openharness_home_paths(monkeypatch) -> None:
+    with _temp_openharness_home() as home_dir:
+        monkeypatch.setenv("OPENHARNESS_HOME", str(home_dir))
+        (home_dir / ".env").write_text(
+            "KNOWLEDGE_SERVER_API_KEY=test-api-key\n"
+            "KNOWLEDGE_CLIENT_ID=test-client\n",
+            encoding="utf-8",
+        )
+        (home_dir / "config" / "harness.yaml").write_text(
+            """
+harness:
+  knowledge:
+    enabled: true
+    server_url: "http://localhost:8900"
+    offline_enabled: true
+    pull_enabled: true
+""".strip(),
+            encoding="utf-8",
+        )
+
+        config = load_knowledge_config()
+
+        assert config.enabled is True
+        assert config.api_key == "test-api-key"
+        assert config.client_id == "test-client"
+        assert config.local_store_path == str(home_dir / "knowledge_queue.db")
+        assert config.collected_dir == str(home_dir / "collected")

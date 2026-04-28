@@ -21,6 +21,8 @@ from uuid import uuid4
 from mcp.server.fastmcp import FastMCP
 from mcp.types import ToolAnnotations
 
+from infrastructure.paths import get_default_runtime_cwd
+
 shell_server = FastMCP("openharness-shell", log_level="ERROR")
 
 # ---------------------------------------------------------------------------
@@ -510,7 +512,7 @@ def _build_command_env(extra_env: dict[str, str] | None) -> dict[str, str]:
 def _resolve_cwd(cwd: str | None) -> str:
     """Return the effective working directory for one command invocation."""
     if cwd is None:
-        return str(Path.cwd().resolve())
+        return str(get_default_runtime_cwd())
     return str(Path(cwd).expanduser().resolve(strict=False))
 
 

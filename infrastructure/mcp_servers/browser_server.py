@@ -9,6 +9,8 @@ from uuid import uuid4
 from mcp.server.fastmcp import FastMCP
 from mcp.types import ToolAnnotations
 
+from infrastructure.paths import get_default_runtime_cwd
+
 try:
     from playwright.async_api import Error as PlaywrightError
     from playwright.async_api import TimeoutError as PlaywrightTimeoutError
@@ -494,7 +496,7 @@ def _validate_timeout(value: int, *, field_name: str) -> None:
 def _resolve_output_path(path: str, *, cwd: str | None) -> Path:
     """Resolve one screenshot output path."""
     normalized_path = _normalize_required_string(path, field_name="path")
-    root = Path.cwd().resolve() if cwd is None else Path(cwd).expanduser().resolve(strict=False)
+    root = get_default_runtime_cwd() if cwd is None else Path(cwd).expanduser().resolve(strict=False)
     candidate_path = Path(normalized_path).expanduser()
     if not candidate_path.is_absolute():
         candidate_path = root / candidate_path

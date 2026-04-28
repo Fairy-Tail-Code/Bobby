@@ -225,7 +225,7 @@ function Initialize-DefaultConfigs {
         }
     }
 
-    foreach ($file in @("harness.yaml", "mcp.yaml", "skill.yaml", ".env.example")) {
+        foreach ($file in @("harness.yaml", "mcp.yaml", "skill.yaml")) {
         $src = Join-Path $defaultsDir $file
         $dst = Join-Path $configDir $file
         if (Test-Path $dst) {
@@ -236,9 +236,14 @@ function Initialize-DefaultConfigs {
         }
     }
 
+    $envExampleDst = Join-Path $Home ".env.example"
     # Copy .env.example as .env
     $envDst = Join-Path $Home ".env"
     $envSrc = Join-Path $defaultsDir ".env.example"
+    if (-not (Test-Path $envExampleDst) -and (Test-Path $envSrc)) {
+        Copy-Item $envSrc $envExampleDst
+        Write-Ok "Installed .env.example"
+    }
     if (-not (Test-Path $envDst) -and (Test-Path $envSrc)) {
         Copy-Item $envSrc $envDst
         Write-Ok "Installed .env"

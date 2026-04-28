@@ -133,8 +133,8 @@ class KnowledgeConfig:
     offline_enabled: bool = True
     pull_enabled: bool = True
     pull_categories: list[str] = field(default_factory=list)
-    local_store_path: str = ".openharness/knowledge_queue.db"
-    collected_dir: str = ".openharness/collected"
+    local_store_path: str = "knowledge_queue.db"
+    collected_dir: str = "collected"
 
 
 @dataclass
@@ -339,6 +339,6 @@ def load_knowledge_config() -> KnowledgeConfig:
         offline_enabled=raw.get("offline_enabled", True),
         pull_enabled=raw.get("pull_enabled", True),
         pull_categories=raw.get("pull_categories", []),
-        local_store_path=raw.get("local_store_path", str(home / ".openharness" / "knowledge_queue.db")),
-        collected_dir=raw.get("collected_dir", str(home / ".openharness" / "collected")),
+        local_store_path=raw.get("local_store_path", str(home / "knowledge_queue.db")),
+        collected_dir=raw.get("collected_dir", str(home / "collected")),
     )

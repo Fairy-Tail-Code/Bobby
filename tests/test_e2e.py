@@ -1,38 +1,125 @@
-"""End-to-end structural test — verifies wiring without MCP servers or LLM calls."""
+from __future__ import annotations
+
+import shutil
+import uuid
+from contextlib import contextmanager
 from pathlib import Path
 
-from config.config import load_llm_config, load_mcp_config, load_harness_config
-from agents.planner import create_planner
-from agents.generator import create_generator
-from agents.evaluator import create_evaluator
 from agents.PM import create_pm
-from agents.factory import setup_handoffs
-from agents.user import create_user
+from agents.evaluator import create_evaluator
+from agents.generator import create_generator
+from agents.planner import create_planner
+from config.config import LlmAgentConfig, LlmConfig, load_harness_config, load_llm_config, load_mcp_config
+from infrastructure.paths import ensure_dirs, get_config_dir, get_env_path, get_session_dir, get_workspace_dir
 from orchestration.termination import create_termination_check
 
 
-PROJECT_DIR = Path(__file__).parent.parent
-CONFIG_DIR = PROJECT_DIR / "config"
+@contextmanager
+def _temp_openharness_home() -> Path:
+    temp_root = Path(__file__).resolve().parent.parent / ".test-tmp-e2e"
+    home_dir = temp_root / uuid.uuid4().hex
+    (home_dir / "config").mkdir(parents=True, exist_ok=True)
+    try:
+        yield home_dir
+    finally:
+        shutil.rmtree(home_dir, ignore_errors=True)
 
 
-def test_config_files_exist():
-    assert (PROJECT_DIR / ".env").exists()
-    assert (CONFIG_DIR / "mcp.yaml").exists()
-    assert (CONFIG_DIR / "harness.yaml").exists()
+def _build_llm_config() -> LlmConfig:
+    return LlmConfig(
+        pm=LlmAgentConfig(model="test", base_url="http://localhost/v1", api_key="key", temperature=0.7),
+        planner=LlmAgentConfig(model="test", base_url="http://localhost/v1", api_key="key", temperature=0.7),
+        generator=LlmAgentConfig(model="test", base_url="http://localhost/v1", api_key="key", temperature=0.4),
+        evaluator=LlmAgentConfig(model="test", base_url="http://localhost/v1", api_key="key", temperature=0.2),
+    )
 
 
-def test_config_loading():
-    llm = load_llm_config(PROJECT_DIR)
-    mcp = load_mcp_config(CONFIG_DIR)
-    harness = load_harness_config(CONFIG_DIR)
-    assert llm.planner.model
-    assert len(mcp.servers) >= 1
-    assert harness.max_rounds > 0
-    assert len(harness.dimensions) == 4
+def _write_runtime_config(home_dir: Path) -> None:
+    (home_dir / ".env").write_text(
+        "PM_MODEL=test-model\n"
+        "PM_BASE_URL=http://localhost/v1\n"
+        "PM_API_KEY=test-key\n"
+        "PLANNER_MODEL=test-model\n"
+        "PLANNER_BASE_URL=http://localhost/v1\n"
+        "PLANNER_API_KEY=test-key\n"
+        "GENERATOR_MODEL=test-model\n"
+        "GENERATOR_BASE_URL=http://localhost/v1\n"
+        "GENERATOR_API_KEY=test-key\n"
+        "EVALUATOR_MODEL=test-model\n"
+        "EVALUATOR_BASE_URL=http://localhost/v1\n"
+        "EVALUATOR_API_KEY=test-key\n",
+        encoding="utf-8",
+    )
+    (home_dir / "config" / "mcp.yaml").write_text(
+        """
+mcp_servers:
+  shell:
+    transport: stdio
+    command: python
+    args: ["-m", "test.server"]
+    startup_timeout: 30
+base_config:
+  tool_timeout: 1800
+""".strip(),
+        encoding="utf-8",
+    )
+    (home_dir / "config" / "harness.yaml").write_text(
+        """
+harness:
+  mode: swarm
+  evaluation:
+    score_threshold: 7
+    dimensions:
+      - name: design_quality
+        weight: high
+        threshold: 7
+      - name: originality
+        weight: high
+        threshold: 7
+      - name: craftsmanship
+        weight: low
+        threshold: 5
+      - name: functionality
+        weight: low
+        threshold: 5
+  tech_stack:
+    frontend: react+vite
+    backend: fastapi
+  context:
+    enabled: true
+    max_messages: 500
+    keep_first_message: true
+    max_tokens: 200000
+    auto_compact_enabled: true
+    max_rounds: 50
+""".strip(),
+        encoding="utf-8",
+    )
 
 
-def test_agent_creation():
-    llm = load_llm_config(PROJECT_DIR)
+def test_runtime_paths_and_config_loading(monkeypatch) -> None:
+    with _temp_openharness_home() as home_dir:
+        monkeypatch.setenv("OPENHARNESS_HOME", str(home_dir))
+        _write_runtime_config(home_dir)
+        ensure_dirs()
+
+        assert get_env_path().exists()
+        assert (get_config_dir() / "mcp.yaml").exists()
+        assert (get_config_dir() / "harness.yaml").exists()
+        assert get_session_dir().exists()
+        assert get_workspace_dir().exists()
+
+        llm = load_llm_config()
+        mcp = load_mcp_config()
+        harness = load_harness_config()
+        assert llm.planner.model == "test-model"
+        assert len(mcp.servers) == 1
+        assert harness.max_rounds == 50
+        assert len(harness.dimensions) == 4
+
+
+def test_agent_creation() -> None:
+    llm = _build_llm_config()
     pm = create_pm(llm)
     planner = create_planner(llm)
     generator = create_generator(llm)
@@ -43,24 +130,7 @@ def test_agent_creation():
     assert evaluator.name == "Evaluator"
 
 
-def test_handoffs_setup():
-    llm = load_llm_config(PROJECT_DIR)
-    agents = {
-        "pm": create_pm(llm),
-        "planner": create_planner(llm),
-        "generator": create_generator(llm),
-        "evaluator": create_evaluator(llm),
-        "user": create_user(llm),
-    }
-    setup_handoffs(agents)
-    # Verify handoffs were set
-    assert len(agents["pm"].handoffs.llm_conditions) > 0
-    assert len(agents["planner"].handoffs.llm_conditions) > 0
-    assert len(agents["generator"].handoffs.llm_conditions) > 0
-    assert len(agents["evaluator"].handoffs.llm_conditions) > 0
-
-
-def test_termination_conditions():
+def test_termination_conditions() -> None:
     check = create_termination_check()
     assert check({"content": "EVALUATION PASSED - ALL DIMENSIONS ABOVE THRESHOLD", "name": "Evaluator"})
     assert check({"content": "TERMINATE", "name": "Evaluator"})

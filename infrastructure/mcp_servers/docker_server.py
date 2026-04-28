@@ -8,6 +8,8 @@ from typing import Any
 from mcp.server.fastmcp import FastMCP
 from mcp.types import ToolAnnotations
 
+from infrastructure.paths import get_default_runtime_cwd
+
 
 docker_server = FastMCP("openharness-docker", log_level="ERROR")
 
@@ -344,7 +346,7 @@ def _run_command(command: list[str], cwd: Path | None = None) -> subprocess.Comp
 def _resolve_project_path(project_path: str, *, cwd: str | None) -> Path:
     """Resolve one compose project root."""
     normalized_project_path = _normalize_required_string(project_path, field_name="project_path")
-    base_dir = Path.cwd().resolve() if cwd is None else Path(cwd).expanduser().resolve(strict=False)
+    base_dir = get_default_runtime_cwd() if cwd is None else Path(cwd).expanduser().resolve(strict=False)
     candidate_path = Path(normalized_project_path).expanduser()
     if not candidate_path.is_absolute():
         candidate_path = base_dir / candidate_path

@@ -18,7 +18,7 @@ from config.config import (
 )
 from infrastructure.mcp.manager import McpManager
 from infrastructure.paths import (
-    get_session_dir, get_system_skills_dir, get_user_skills_dir,
+    get_config_dir, get_session_dir, get_system_skills_dir, get_user_skills_dir,
 )
 from infrastructure.skills.registry import SkillRegistry
 from agents.factory import create_all_agents
@@ -231,7 +231,10 @@ async def _handle_knowledge_command(args: list[str]) -> None:
     """Handle knowledge subcommands: sync, search, status."""
     knowledge_config = load_knowledge_config()
     if not knowledge_config.enabled:
-        print("Knowledge sharing is not enabled. Set knowledge.enabled=true in config/harness.yaml")
+        print(
+            "Knowledge sharing is not enabled. "
+            f"Set knowledge.enabled=true in {get_config_dir() / 'harness.yaml'}"
+        )
         sys.exit(1)
 
     if not args or args[0] == "status":

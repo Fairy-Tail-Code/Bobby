@@ -8,6 +8,8 @@ from typing import Any
 from mcp.server.fastmcp import FastMCP
 from mcp.types import ToolAnnotations
 
+from infrastructure.paths import get_default_runtime_cwd
+
 
 git_server = FastMCP("openharness-git", log_level="ERROR")
 
@@ -311,7 +313,7 @@ def clone_git_repository(
 ) -> dict[str, Any]:
     """Clone one remote repository into a destination directory."""
     normalized_repo_url = _normalize_required_string(repo_url, field_name="repo_url")
-    root = Path.cwd().resolve() if cwd is None else Path(cwd).expanduser().resolve(strict=False)
+    root = get_default_runtime_cwd() if cwd is None else Path(cwd).expanduser().resolve(strict=False)
     destination = Path(destination_path).expanduser()
     if not destination.is_absolute():
         destination = root / destination
@@ -465,7 +467,7 @@ def _run_git_command(repo_root: Path, args: list[str], timeout: int = 60) -> sub
 
 def _resolve_git_repo_root(repo_path: str, *, cwd: str | None) -> Path:
     """Resolve one repository path and return its top-level root."""
-    root = Path.cwd().resolve() if cwd is None else Path(cwd).expanduser().resolve(strict=False)
+    root = get_default_runtime_cwd() if cwd is None else Path(cwd).expanduser().resolve(strict=False)
     candidate_path = Path(repo_path).expanduser()
     if not candidate_path.is_absolute():
         candidate_path = root / candidate_path

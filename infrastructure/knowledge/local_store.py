@@ -27,7 +27,10 @@ CREATE INDEX IF NOT EXISTS idx_kq_status ON knowledge_queue(status);
 class LocalKnowledgeStore:
     """Local SQLite queue for experiences pending sync."""
 
-    def __init__(self, store_path: str = ".openharness/knowledge_queue.db"):
+    def __init__(self, store_path: str | Path | None = None):
+        if store_path is None:
+            from infrastructure.paths import get_home
+            store_path = get_home() / "knowledge_queue.db"
         self._path = Path(store_path)
         self._conn: aiosqlite.Connection | None = None
 

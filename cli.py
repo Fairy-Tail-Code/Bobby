@@ -201,7 +201,7 @@ def install() -> None:
     click.echo(f"Created directory structure at {home}")
 
     config_dir = get_config_dir()
-    for name in ["harness.yaml", "mcp.yaml", "skill.yaml", ".env.example"]:
+    for name in ["harness.yaml", "mcp.yaml", "skill.yaml"]:
         src = defaults / name
         dst = config_dir / name
         if dst.exists():
@@ -213,8 +213,12 @@ def install() -> None:
         else:
             click.echo(f"  Warning: template {name} not found at {src}")
 
+    env_example_dst = get_home() / ".env.example"
     env_dst = get_env_path()
     env_src = defaults / ".env.example"
+    if not env_example_dst.exists() and env_src.exists():
+        env_example_dst.write_text(env_src.read_text(encoding="utf-8"), encoding="utf-8")
+        click.echo("  Installed .env.example")
     if not env_dst.exists() and env_src.exists():
         env_dst.write_text(env_src.read_text(encoding="utf-8"), encoding="utf-8")
         click.echo("  Installed .env (from .env.example)")

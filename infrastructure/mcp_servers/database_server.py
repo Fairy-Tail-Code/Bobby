@@ -7,6 +7,8 @@ from typing import Any
 from mcp.server.fastmcp import FastMCP
 from mcp.types import ToolAnnotations
 
+from infrastructure.paths import get_default_runtime_cwd
+
 
 database_server = FastMCP("openharness-database", log_level="ERROR")
 
@@ -283,7 +285,7 @@ def _quote_identifier(identifier: str) -> str:
 def _resolve_root(cwd: str | None) -> Path:
     """Return the effective root directory for relative database paths."""
     if cwd is None:
-        return Path.cwd().resolve()
+        return get_default_runtime_cwd()
     return Path(cwd).expanduser().resolve(strict=False)
 
 

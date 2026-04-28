@@ -49,6 +49,13 @@ def get_workspace_dir() -> Path:
     return get_home() / "workspace"
 
 
+def get_default_runtime_cwd() -> Path:
+    """Return the default working directory for MCP tools and agent execution."""
+    workspace_dir = get_workspace_dir()
+    workspace_dir.mkdir(parents=True, exist_ok=True)
+    return workspace_dir.resolve(strict=False)
+
+
 def get_system_skills_dir() -> Path:
     return get_project_dir() / "skills" / "system"
 
@@ -93,6 +100,6 @@ def ensure_dirs() -> None:
         get_user_skills_dir(),
         get_workspace_dir(),
         get_workspace_dir() / ".tasks",
-        get_home() / ".openharness",
+        get_home() / "collected",
     ]:
         d.mkdir(parents=True, exist_ok=True)
