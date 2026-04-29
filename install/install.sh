@@ -316,10 +316,14 @@ run_setup_wizard() {
     local home="$1"
     local env_path="$home/.env"
 
-    # Skip if .env already has real API keys
+    # Ask user if they want to configure, even if .env exists
     if [[ -f "$env_path" ]] && grep -qP '_API_KEY=\S+' "$env_path" 2>/dev/null; then
-        echo "  .env already has API keys configured, skipping wizard."
-        return 0
+        echo "  .env already has API keys configured."
+        read -rp "  Reconfigure? [y/N]: " reconfig
+        if [[ ! "$reconfig" =~ ^[Yy]$ ]]; then
+            echo "  Skipping wizard."
+            return 0
+        fi
     fi
 
     echo ""

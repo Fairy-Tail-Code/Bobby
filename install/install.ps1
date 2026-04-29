@@ -299,11 +299,18 @@ function Invoke-SetupWizard {
 
     $envPath = Join-Path $HarnessHome ".env"
 
-    # Skip if .env already has real API keys
+    # Ask user if they want to configure, even if .env exists
+    $hasKeys = $false
     if (Test-Path $envPath) {
         $existing = Get-Content $envPath -Raw -ErrorAction SilentlyContinue
-        if ($existing -match "_API_KEY=\S+") {
-            Write-Host "  .env already has API keys configured, skipping wizard." -ForegroundColor Yellow
+        if ($existing -match "_API_KEY=\S+") { $hasKeys = $true }
+    }
+
+    if ($hasKeys) {
+        Write-Host "  .env already has API keys configured." -ForegroundColor Yellow
+        $reconfig = Read-Host "  Reconfigure? [y/N]"
+        if ($reconfig -ne "y" -and $reconfig -ne "Y") {
+            Write-Host "  Skipping wizard." -ForegroundColor Yellow
             return
         }
     }
