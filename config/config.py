@@ -10,6 +10,10 @@ import yaml
 from infrastructure.paths import get_home, get_config_dir, get_env_path
 
 
+class ConfigError(ValueError):
+    """Raised when required OpenHarness configuration is missing or invalid."""
+
+
 @dataclass
 class LlmAgentConfig:
     model: str
@@ -151,6 +155,8 @@ class HarnessConfig:
 
 
 def _load_yaml(path: Path) -> dict:
+    if not path.exists():
+        raise ConfigError(f"Missing required config file: {path}")
     with open(path, encoding="utf-8") as f:
         return yaml.safe_load(f)
 
@@ -172,6 +178,14 @@ def _load_dotenv(env_path: Path) -> dict[str, str]:
 
 def _load_agent_env_config(env: dict[str, str], prefix: str) -> LlmAgentConfig:
     """Load an agent's LLM config from env vars with the given prefix."""
+    missing = [f"{prefix}_{suffix}" for suffix in ("MODEL", "BASE_URL", "API_KEY") if not env.get(f"{prefix}_{suffix}")]
+    if missing:
+        env_path = get_env_path()
+        missing_list = ", ".join(missing)
+        raise ConfigError(
+            f"Missing required LLM config in {env_path}: {missing_list}. "
+            f"Edit {env_path} and fill the values from {env_path.with_name('.env.example')}."
+        )
     return LlmAgentConfig(
         model=env[f"{prefix}_MODEL"],
         base_url=env[f"{prefix}_BASE_URL"],
@@ -183,6 +197,20 @@ def _load_agent_env_config(env: dict[str, str], prefix: str) -> LlmAgentConfig:
 def load_llm_config() -> LlmConfig:
     """Load LLM config from .env file."""
     env = _load_dotenv(get_env_path())
+    required_prefixes = ("PM", "PLANNER", "GENERATOR", "EVALUATOR")
+    missing_keys: list[str] = []
+    for prefix in required_prefixes:
+        for suffix in ("MODEL", "BASE_URL", "API_KEY"):
+            key = f"{prefix}_{suffix}"
+            if not env.get(key):
+                missing_keys.append(key)
+    if missing_keys:
+        env_path = get_env_path()
+        missing_list = ", ".join(missing_keys)
+        raise ConfigError(
+            f"Missing required LLM config in {env_path}: {missing_list}. "
+            f"Edit {env_path} and fill the values from {env_path.with_name('.env.example')}."
+        )
     return LlmConfig(
         pm=_load_agent_env_config(env, "PM"),
         planner=_load_agent_env_config(env, "PLANNER"),

@@ -16,6 +16,20 @@ irm https://raw.githubusercontent.com/iamikunnnnn/Bobby/main/install/install.ps1
 curl -fsSL https://raw.githubusercontent.com/iamikunnnnn/Bobby/main/install/install.sh | bash
 ```
 
+### 升级
+
+重新下载最新版 `harness` 二进制（不覆盖配置）：
+
+```powershell
+# Windows
+irm https://raw.githubusercontent.com/iamikunnnnn/Bobby/main/install/install.ps1 | iex -Upgrade
+```
+
+```bash
+# macOS / Linux
+INSTALL_UPGRADE=true curl -fsSL https://raw.githubusercontent.com/iamikunnnnn/Bobby/main/install/install.sh | bash
+```
+
 安装脚本会自动：
 
 1. 检查依赖（Python 3.12+, uv, Git）

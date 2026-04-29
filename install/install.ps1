@@ -14,7 +14,8 @@
 param(
     [string]$InstallDir = "",
     [string]$Version = "latest",
-    [string]$Channel = "irm-install"
+    [string]$Channel = "irm-install",
+    [switch]$Upgrade
 )
 
 $ErrorActionPreference = "Stop"
@@ -145,14 +146,19 @@ function Initialize-DirectoryStructure {
 }
 
 function Install-HarnessBinary {
-    param([string]$HarnessHome, [string]$Version)
+    param([string]$HarnessHome, [string]$Version, [bool]$Upgrade = $false)
 
     $binDir = Join-Path $HarnessHome "bin"
     $dest = Join-Path $binDir "harness.exe"
 
-    if (Test-Path $dest) {
+    if ((Test-Path $dest) -and -not $Upgrade) {
         Write-Ok "harness.exe already exists, skipping download"
         return $true
+    }
+
+    if ((Test-Path $dest) -and $Upgrade) {
+        Remove-Item $dest -Force
+        Write-Host "  Removed old harness.exe" -ForegroundColor Yellow
     }
 
     # Determine download URL
@@ -411,7 +417,7 @@ function Main {
 
     # Install
     Initialize-DirectoryStructure $installHome
-    Install-HarnessBinary $installHome $Version
+    Install-HarnessBinary $installHome $Version $Upgrade
     Initialize-DefaultConfigs $installHome
     Set-PathVariable $installHome
 

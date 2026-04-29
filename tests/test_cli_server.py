@@ -9,6 +9,7 @@ from pathlib import Path
 from click.testing import CliRunner
 
 import cli as cli_module
+from config.config import ConfigError
 
 
 @contextmanager
@@ -52,6 +53,19 @@ def test_server_start_background_uses_background_launcher(monkeypatch) -> None:
 
     assert result.exit_code == 0
     assert called["background"] is True
+
+
+def test_server_start_surfaces_config_error_cleanly(monkeypatch) -> None:
+    async def fake_server_main():
+        raise ConfigError("missing env config")
+
+    monkeypatch.setattr(cli_module, "_server_main", fake_server_main)
+
+    result = CliRunner().invoke(cli_module.cli, ["server", "start"])
+
+    assert result.exit_code != 0
+    assert "missing env config" in result.output
+    assert "Traceback" not in result.output
 
 
 def test_server_stop_removes_stale_pid_when_process_is_not_running(

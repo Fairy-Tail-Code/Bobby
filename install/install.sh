@@ -14,6 +14,7 @@ REPO_OWNER="iamikunnnnn"
 REPO_NAME="Bobby"
 VERSION="${INSTALL_VERSION:-latest}"
 CHANNEL="${INSTALL_CHANNEL:-curl-install}"
+UPGRADE="${INSTALL_UPGRADE:-false}"
 HAS_PYTHON=false
 HAS_UV=false
 HAS_GIT=false
@@ -141,9 +142,14 @@ install_harness_binary() {
     local home="$1"
     local dest="$home/bin/harness"
 
-    if [[ -f "$dest" ]]; then
+    if [[ -f "$dest" ]] && [[ "$UPGRADE" != "true" ]]; then
         ok "harness binary already exists, skipping download"
         return 0
+    fi
+
+    if [[ -f "$dest" ]] && [[ "$UPGRADE" == "true" ]]; then
+        rm -f "$dest"
+        warn "Removed old harness binary"
     fi
 
     local tag

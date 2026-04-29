@@ -65,7 +65,13 @@ def server_start(background: bool, foreground: bool) -> None:
     if background:
         _server_start_background()
         return
-    asyncio.run(_server_main())
+    try:
+        asyncio.run(_server_main())
+    except Exception as exc:
+        from config.config import ConfigError
+        if isinstance(exc, ConfigError):
+            raise click.ClickException(str(exc)) from exc
+        raise
 
 
 @server.command("stop")

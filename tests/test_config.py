@@ -6,6 +6,7 @@ from contextlib import contextmanager
 from pathlib import Path
 
 from config.config import (
+    ConfigError,
     load_harness_config,
     load_knowledge_config,
     load_llm_config,
@@ -82,6 +83,26 @@ def test_load_llm_config_default_temperature(monkeypatch) -> None:
         assert config.planner.temperature == 0.7
         assert config.generator.temperature == 0.7
         assert config.evaluator.temperature == 0.7
+
+
+def test_load_llm_config_reports_all_missing_required_keys(monkeypatch) -> None:
+    with _temp_openharness_home() as home_dir:
+        monkeypatch.setenv("OPENHARNESS_HOME", str(home_dir))
+        (home_dir / ".env").write_text("", encoding="utf-8")
+
+        try:
+            load_llm_config()
+        except ConfigError as exc:
+            message = str(exc)
+        else:
+            raise AssertionError("Expected ConfigError for missing LLM config.")
+
+        assert str(home_dir / ".env") in message
+        assert "PM_MODEL" in message
+        assert "PLANNER_MODEL" in message
+        assert "GENERATOR_MODEL" in message
+        assert "EVALUATOR_MODEL" in message
+        assert ".env.example" in message
 
 
 def test_load_mcp_config(monkeypatch) -> None:
