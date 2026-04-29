@@ -7,7 +7,9 @@ import os
 import signal
 import subprocess
 import sys
+import time
 from datetime import datetime
+from io import TextIOWrapper
 from pathlib import Path
 
 import click
@@ -21,6 +23,7 @@ from infrastructure.paths import (
     get_home,
     get_install_marker_path,
     get_memory_dir,
+    get_server_log_path,
     get_server_pid_path,
     get_session_dir,
     get_system_skills_dir,
@@ -53,13 +56,16 @@ def server():
 
 
 @server.command("start")
-@click.option("--foreground", "-f", is_flag=True, help="Run in foreground")
-def server_start(foreground: bool) -> None:
+@click.option("--background", "-d", is_flag=True, help="Run in background")
+@click.option("--foreground", "-f", is_flag=True, hidden=True, help="Run in foreground")
+def server_start(background: bool, foreground: bool) -> None:
     """Start the Feishu service."""
-    if foreground:
-        asyncio.run(_server_main())
-    else:
+    if background and foreground:
+        raise click.UsageError("Choose either --background or --foreground, not both.")
+    if background:
         _server_start_background()
+        return
+    asyncio.run(_server_main())
 
 
 @server.command("stop")
@@ -69,25 +75,37 @@ def server_stop() -> None:
     if not pid_path.exists():
         click.echo("No running service found.")
         return
-    pid = int(pid_path.read_text().strip())
     try:
-        if sys.platform == "win32":
-            subprocess.run(["taskkill", "/PID", str(pid), "/F"], check=True, capture_output=True)
-        else:
-            os.kill(pid, signal.SIGTERM)
+        pid = int(pid_path.read_text().strip())
+    except ValueError:
+        pid_path.unlink(missing_ok=True)
+        click.echo("Service was not running (stale PID file removed).")
+        return
+    try:
+        _terminate_background_process(pid)
         pid_path.unlink()
         click.echo(f"Service stopped (PID {pid}).")
-    except (ProcessLookupError, FileNotFoundError):
-        pid_path.unlink()
-        click.echo("Service was not running (stale PID file removed).")
+    except (ProcessLookupError, FileNotFoundError, OSError, subprocess.CalledProcessError) as exc:
+        if _is_stale_server_pid_error(exc):
+            pid_path.unlink(missing_ok=True)
+            click.echo("Service was not running (stale PID file removed).")
+            return
+        raise click.ClickException(f"Failed to stop service PID {pid}: {_format_subprocess_error(exc)}") from exc
 
 
 @server.command("restart")
-def server_restart() -> None:
+@click.option("--background", "-d", is_flag=True, help="Run in background after restart")
+@click.option("--foreground", "-f", is_flag=True, hidden=True, help="Run in foreground after restart")
+def server_restart(background: bool, foreground: bool) -> None:
     """Restart the Feishu service."""
+    if background and foreground:
+        raise click.UsageError("Choose either --background or --foreground, not both.")
     ctx = click.get_current_context()
     ctx.invoke(server_stop)
-    ctx.invoke(server_start)
+    if background:
+        ctx.invoke(server_start, background=True, foreground=False)
+    else:
+        ctx.invoke(server_start, background=False, foreground=True)
 
 
 def _server_main():
@@ -95,31 +113,111 @@ def _server_main():
     return server_main()
 
 
+def _build_server_background_command() -> list[str]:
+    exe = sys.executable
+    if getattr(sys, "frozen", False):
+        return [exe, "server", "start", "--foreground"]
+    return [exe, str(Path(__file__).resolve()), "server", "start", "--foreground"]
+
+
+def _open_background_server_log() -> TextIOWrapper:
+    log_path = get_server_log_path()
+    log_path.parent.mkdir(parents=True, exist_ok=True)
+    return log_path.open("a", encoding="utf-8")
+
+
+def _is_pid_running(pid: int) -> bool:
+    try:
+        os.kill(pid, 0)
+        return True
+    except (ProcessLookupError, FileNotFoundError):
+        return False
+    except OSError:
+        if sys.platform == "win32":
+            return False
+        raise
+
+
+def _terminate_background_process(pid: int) -> None:
+    if sys.platform == "win32":
+        subprocess.run(
+            ["taskkill", "/PID", str(pid), "/F"],
+            check=True,
+            capture_output=True,
+            text=True,
+        )
+        return
+    os.kill(pid, signal.SIGTERM)
+
+
+def _is_stale_server_pid_error(exc: BaseException) -> bool:
+    if isinstance(exc, (ProcessLookupError, FileNotFoundError)):
+        return True
+    if isinstance(exc, OSError) and sys.platform == "win32":
+        return True
+    if isinstance(exc, subprocess.CalledProcessError) and sys.platform == "win32":
+        text = _format_subprocess_error(exc).lower()
+        return "access denied" in text or "not found" in text or "no running instance" in text
+    return False
+
+
+def _format_subprocess_error(exc: BaseException) -> str:
+    if isinstance(exc, subprocess.CalledProcessError):
+        parts = []
+        if exc.stdout:
+            parts.append(str(exc.stdout).strip())
+        if exc.stderr:
+            parts.append(str(exc.stderr).strip())
+        if parts:
+            return " | ".join(parts)
+        return f"exit status {exc.returncode}"
+    return str(exc)
+
+
 def _server_start_background():
     pid_path = get_server_pid_path()
     if pid_path.exists():
         try:
             pid = int(pid_path.read_text().strip())
-            os.kill(pid, 0)
-            click.echo(f"Service already running (PID {pid}). Use 'harness server stop' first.")
-            return
-        except (ProcessLookupError, FileNotFoundError):
+            if _is_pid_running(pid):
+                click.echo(f"Service already running (PID {pid}). Use 'harness server stop' first.")
+                return
             pid_path.unlink()
+        except (ValueError, FileNotFoundError):
+            pid_path.unlink(missing_ok=True)
 
-    exe = sys.executable
-    if getattr(sys, "frozen", False):
-        cmd = [exe, "server", "start", "--foreground"]
-    else:
-        cmd = [exe, str(Path(__file__).resolve()), "server", "start", "--foreground"]
-
-    kwargs: dict = {}
+    cmd = _build_server_background_command()
+    log_file = _open_background_server_log()
+    kwargs: dict = {
+        "stdin": subprocess.DEVNULL,
+        "stdout": log_file,
+        "stderr": subprocess.STDOUT,
+    }
     if sys.platform == "win32":
         kwargs["creationflags"] = subprocess.CREATE_NO_WINDOW
 
-    proc = subprocess.Popen(cmd, **kwargs)
+    try:
+        proc = subprocess.Popen(cmd, **kwargs)
+    finally:
+        if log_file is not None:
+            log_file.close()
+
+    time.sleep(1.0)
+    if proc.poll() is not None:
+        raise click.ClickException(
+            f"Service failed to start in background (exit code {proc.returncode}). "
+            f"See {get_server_log_path()} for details."
+        )
+
     pid_path.parent.mkdir(parents=True, exist_ok=True)
     pid_path.write_text(str(proc.pid))
-    click.echo(f"Service started in background (PID {proc.pid}).")
+    click.echo(f"Service started in background (PID {proc.pid}). Logs: {get_server_log_path()}")
+
+
+@server.command("logs")
+def server_logs() -> None:
+    """Print the current server log path."""
+    click.echo(get_server_log_path())
 
 
 # --- harness knowledge sync/search/status ---

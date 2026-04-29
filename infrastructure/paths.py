@@ -72,6 +72,10 @@ def get_server_pid_path() -> Path:
     return get_home() / ".server.pid"
 
 
+def get_server_log_path() -> Path:
+    return get_home() / "server.log"
+
+
 def get_install_marker_path() -> Path:
     return get_home() / ".install-marker"
 

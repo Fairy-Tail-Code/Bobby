@@ -36,7 +36,7 @@ openai = [
 [[package]]
 name = "ag2-openharness"
 version = "0.1.0"
-source = { virtual = "." }
+source = { editable = "." }
 dependencies = [
     { name = "ag2", extra = ["openai"] },
     { name = "aiosqlite" },
