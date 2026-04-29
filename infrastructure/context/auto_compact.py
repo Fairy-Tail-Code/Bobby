@@ -50,14 +50,33 @@ _KEEP_RECENT_MESSAGES = 6
 # token统计工具
 # ---------------------------------------------------------------------------
 
-# GPT-3.5/4 通用编码
-_ENCODER = tiktoken.get_encoding("cl100k_base")
+_ENCODER = None
+
+
+def _get_encoder():
+    """Lazily initialize the tokenizer so frozen builds can fall back safely."""
+    global _ENCODER
+    if _ENCODER is not None:
+        return _ENCODER
+    try:
+        _ENCODER = tiktoken.get_encoding("cl100k_base")
+    except Exception:
+        logger.warning(
+            "Failed to load tiktoken encoding 'cl100k_base'; falling back to heuristic token counting.",
+            exc_info=True,
+        )
+        _ENCODER = False
+    return _ENCODER
 
 def _count_tokens(text: str) -> int:
     """使用 cl100k_base 统计文本token数"""
     if not text:
         return 0
-    return len(_ENCODER.encode(text))
+    encoder = _get_encoder()
+    if encoder is False:
+        # Rough fallback: OpenAI-style tokenization is often ~4 chars/token for mixed text.
+        return max(1, (len(text) + 3) // 4)
+    return len(encoder.encode(text))
 
 def _estimate_message_tokens(msg: dict[str, Any]) -> int:
     """估算单条消息的token数（含格式开销）"""

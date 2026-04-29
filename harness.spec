@@ -6,7 +6,10 @@ a = Analysis(
     pathex=[],
     binaries=[],
     datas=[],
-    hiddenimports=[],
+    hiddenimports=[
+        'tiktoken_ext',
+        'tiktoken_ext.openai_public',
+    ],
     hookspath=[],
     hooksconfig={},
     runtime_hooks=[],
