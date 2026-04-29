@@ -310,6 +310,90 @@ set_path_variable() {
 }
 
 # ---------------------------------------------------------------------------
+# Setup Wizard
+# ---------------------------------------------------------------------------
+run_setup_wizard() {
+    local home="$1"
+    local env_path="$home/.env"
+
+    # Skip if .env already has real API keys
+    if [[ -f "$env_path" ]] && grep -qP '_API_KEY=\S+' "$env_path" 2>/dev/null; then
+        echo "  .env already has API keys configured, skipping wizard."
+        return 0
+    fi
+
+    echo ""
+    echo -e "  ${CYAN}── Configuration Wizard ──${NC}"
+    echo ""
+
+    # LLM Provider
+    echo "  Which LLM provider do you want to use?"
+    echo "    1) OpenAI"
+    echo "    2) Zhipu / GLM (智谱)"
+    echo "    3) DeepSeek"
+    echo "    4) Anthropic / Claude"
+    echo "    5) Other (custom base URL)"
+    read -rp "  Enter choice [1-5, default=1]: " choice
+    choice="${choice:-1}"
+
+    case "$choice" in
+        1) default_url="https://api.openai.com/v1"; default_model="gpt-4o" ;;
+        2) default_url="https://open.bigmodel.cn/api/paas/v4"; default_model="GLM-4-Plus" ;;
+        3) default_url="https://api.deepseek.com"; default_model="deepseek-chat" ;;
+        4) default_url="https://api.anthropic.com"; default_model="claude-sonnet-4-20250514" ;;
+        *) default_url=""; default_model="" ;;
+    esac
+
+    read -rp "  Base URL [$default_url]: " base_url
+    base_url="${base_url:-$default_url}"
+
+    read -rp "  Model name [$default_model]: " model
+    model="${model:-$default_model}"
+
+    read -rp "  API Key: " api_key
+    if [[ -z "$api_key" ]]; then
+        warn "No API key provided. You can edit .env later."
+        return 0
+    fi
+
+    echo ""
+    echo "  Use the same API config for all 4 agents (PM, Planner, Generator, Evaluator)?"
+    read -rp "  [Y/n, default=Y]: " same_all
+    same_all="${same_all:-Y}"
+
+    local env_content=""
+    local roles="PM:0.7 PLANNER:0.7 GENERATOR:0.4 EVALUATOR:0.2"
+
+    for role_temp in $roles; do
+        local prefix="${role_temp%%:*}"
+        local temp="${role_temp##*:}"
+
+        if [[ "$same_all" =~ ^[Yy] ]]; then
+            r_model="$model"
+            r_url="$base_url"
+            r_key="$api_key"
+        else
+            echo ""
+            echo -e "  ${YELLOW}── $prefix Agent ──${NC}"
+            read -rp "  Model [$model]: " r_model
+            r_model="${r_model:-$model}"
+            read -rp "  Base URL [$base_url]: " r_url
+            r_url="${r_url:-$base_url}"
+            read -rp "  API Key [$api_key]: " r_key
+            r_key="${r_key:-$api_key}"
+        fi
+
+        env_content+="${prefix}_MODEL=${r_model}"$'\n'
+        env_content+="${prefix}_BASE_URL=${r_url}"$'\n'
+        env_content+="${prefix}_API_KEY=${r_key}"$'\n'
+        env_content+="${prefix}_TEMPERATURE=${temp}"$'\n'
+    done
+
+    echo "$env_content" > "$env_path"
+    ok "Configuration saved to $env_path"
+}
+
+# ---------------------------------------------------------------------------
 # Main
 # ---------------------------------------------------------------------------
 main() {
@@ -332,6 +416,9 @@ main() {
     init_default_configs "$home"
     set_path_variable "$home"
 
+    # Setup wizard
+    run_setup_wizard "$home"
+
     # Summary
     echo ""
     echo -e "  ${GREEN}╔══════════════════════════════════════╗${NC}"
@@ -343,9 +430,8 @@ main() {
     echo "  .env:    $home/.env"
     echo ""
     echo -e "  ${YELLOW}Next steps:${NC}"
-    echo "    1. Edit $home/.env with your API keys"
-    echo "    2. Run: source ~/.bashrc  (or restart your shell)"
-    echo "    3. Run: harness info"
+    echo "    1. Run: source ~/.bashrc  (or restart your shell)"
+    echo "    2. Run: harness info"
 
     if ! $HAS_PYTHON; then
         echo ""

@@ -291,6 +291,101 @@ function Set-PathVariable {
 }
 
 # ---------------------------------------------------------------------------
+# Setup Wizard (interactive configuration)
+# ---------------------------------------------------------------------------
+
+function Invoke-SetupWizard {
+    param([string]$HarnessHome)
+
+    $envPath = Join-Path $HarnessHome ".env"
+
+    # Skip if .env already has real API keys
+    if (Test-Path $envPath) {
+        $existing = Get-Content $envPath -Raw -ErrorAction SilentlyContinue
+        if ($existing -match "_API_KEY=\S+") {
+            Write-Host "  .env already has API keys configured, skipping wizard." -ForegroundColor Yellow
+            return
+        }
+    }
+
+    Write-Host ""
+    Write-Host "  ── Configuration Wizard ──" -ForegroundColor Cyan
+    Write-Host ""
+
+    # LLM Provider
+    Write-Host "  Which LLM provider do you want to use?" -ForegroundColor White
+    Write-Host "    1) OpenAI"
+    Write-Host "    2) Zhipu / GLM (智谱)"
+    Write-Host "    3) DeepSeek"
+    Write-Host "    4) Anthropic / Claude"
+    Write-Host "    5) Other (custom base URL)"
+    $choice = Read-Host "  Enter choice [1-5, default=1]"
+    if (-not $choice) { $choice = "1" }
+
+    switch ($choice) {
+        "1" { $defaultUrl = "https://api.openai.com/v1"; $defaultModel = "gpt-4o" }
+        "2" { $defaultUrl = "https://open.bigmodel.cn/api/paas/v4"; $defaultModel = "GLM-4-Plus" }
+        "3" { $defaultUrl = "https://api.deepseek.com"; $defaultModel = "deepseek-chat" }
+        "4" { $defaultUrl = "https://api.anthropic.com"; $defaultModel = "claude-sonnet-4-20250514" }
+        default { $defaultUrl = ""; $defaultModel = "" }
+    }
+
+    $baseUrl = Read-Host "  Base URL [$defaultUrl]"
+    if (-not $baseUrl) { $baseUrl = $defaultUrl }
+
+    $model = Read-Host "  Model name [$defaultModel]"
+    if (-not $model) { $model = $defaultModel }
+
+    $apiKey = Read-Host "  API Key"
+    if (-not $apiKey) {
+        Write-Warn "No API key provided. You can edit .env later."
+        return
+    }
+
+    # Use same config for all roles?
+    Write-Host ""
+    Write-Host "  Use the same API config for all 4 agents (PM, Planner, Generator, Evaluator)?" -ForegroundColor White
+    $sameAll = Read-Host "  [Y/n, default=Y]"
+    if (-not $sameAll) { $sameAll = "Y" }
+
+    $envContent = ""
+    $roles = @(
+        @("PM", "0.7"),
+        @("PLANNER", "0.7"),
+        @("GENERATOR", "0.4"),
+        @("EVALUATOR", "0.2")
+    )
+
+    foreach ($role in $roles) {
+        $prefix = $role[0]
+        $temp = $role[1]
+
+        if ($sameAll -eq "Y" -or $sameAll -eq "y") {
+            $rModel = $model
+            $rUrl = $baseUrl
+            $rKey = $apiKey
+        } else {
+            Write-Host ""
+            Write-Host "  ── $prefix Agent ──" -ForegroundColor Yellow
+            $rModel = Read-Host "  Model [$model]"
+            if (-not $rModel) { $rModel = $model }
+            $rUrl = Read-Host "  Base URL [$baseUrl]"
+            if (-not $rUrl) { $rUrl = $baseUrl }
+            $rKey = Read-Host "  API Key [$apiKey]"
+            if (-not $rKey) { $rKey = $apiKey }
+        }
+
+        $envContent += "$($prefix)_MODEL=$rModel`n"
+        $envContent += "$($prefix)_BASE_URL=$rUrl`n"
+        $envContent += "$($prefix)_API_KEY=$rKey`n"
+        $envContent += "$($prefix)_TEMPERATURE=$temp`n"
+    }
+
+    $envContent | Set-Content $envPath -Encoding UTF8
+    Write-Ok "Configuration saved to $envPath"
+}
+
+# ---------------------------------------------------------------------------
 # Main
 # ---------------------------------------------------------------------------
 
@@ -313,6 +408,9 @@ function Main {
     Initialize-DefaultConfigs $installHome
     Set-PathVariable $installHome
 
+    # Setup wizard
+    Invoke-SetupWizard $installHome
+
     # Summary
     Write-Host ""
     Write-Host "  ╔══════════════════════════════════════╗" -ForegroundColor Green
@@ -324,9 +422,8 @@ function Main {
     Write-Host "  .env:    $installHome\.env" -ForegroundColor White
     Write-Host ""
     Write-Host "  Next steps:" -ForegroundColor Yellow
-    Write-Host "    1. Edit $installHome\.env with your API keys"
-    Write-Host "    2. Open a new terminal (to refresh PATH)"
-    Write-Host "    3. Run: harness info"
+    Write-Host "    1. Open a new terminal (to refresh PATH)"
+    Write-Host "    2. Run: harness info"
 
     if (-not $script:HasPython) {
         Write-Host ""

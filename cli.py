@@ -243,7 +243,74 @@ def install() -> None:
     click.echo(f"\nInstallation complete!")
     click.echo(f"  Home: {home}")
     click.echo(f"  Config: {config_dir}")
-    click.echo(f"\nEdit {get_env_path()} with your API keys before running.")
+    click.echo(f"\nRun 'harness setup' to configure your API keys, or edit {get_env_path()} manually.")
+
+
+# --- harness setup ---
+
+_PROVIDERS = {
+    "1": ("OpenAI", "https://api.openai.com/v1", "gpt-4o"),
+    "2": ("Zhipu / GLM", "https://open.bigmodel.cn/api/paas/v4", "GLM-4-Plus"),
+    "3": ("DeepSeek", "https://api.deepseek.com", "deepseek-chat"),
+    "4": ("Anthropic / Claude", "https://api.anthropic.com", "claude-sonnet-4-20250514"),
+}
+
+
+@cli.command()
+def setup() -> None:
+    """Interactive configuration wizard for API keys."""
+    env_path = get_env_path()
+
+    # Check if .env already has keys
+    if env_path.exists():
+        content = env_path.read_text(encoding="utf-8")
+        import re
+        if re.search(r'_API_KEY=\S+', content):
+            if not click.confirm("  .env already has API keys. Reconfigure?"):
+                return
+
+    click.echo("")
+    click.echo("  ── Configuration Wizard ──")
+    click.echo("")
+
+    click.echo("  Which LLM provider do you want to use?")
+    for k, (name, _, _) in _PROVIDERS.items():
+        click.echo(f"    {k}) {name}")
+    click.echo("    5) Other (custom base URL)")
+
+    choice = click.prompt("  Enter choice", default="1", show_default=False)
+    if choice in _PROVIDERS:
+        _, default_url, default_model = _PROVIDERS[choice]
+    else:
+        default_url, default_model = "", ""
+
+    base_url = click.prompt("  Base URL", default=default_url)
+    model = click.prompt("  Model name", default=default_model)
+    api_key = click.prompt("  API Key", hide_input=True)
+    if not api_key:
+        click.echo("  No API key provided. You can edit .env later.")
+        return
+
+    same_all = click.confirm("  Use same config for all 4 agents (PM, Planner, Generator, Evaluator)?", default=True)
+
+    roles = [("PM", "0.7"), ("PLANNER", "0.7"), ("GENERATOR", "0.4"), ("EVALUATOR", "0.2")]
+    lines = []
+
+    for prefix, temp in roles:
+        if same_all:
+            r_model, r_url, r_key = model, base_url, api_key
+        else:
+            click.echo(f"\n  ── {prefix} Agent ──")
+            r_model = click.prompt("  Model", default=model)
+            r_url = click.prompt("  Base URL", default=base_url)
+            r_key = click.prompt("  API Key", default=api_key, hide_input=True)
+        lines.append(f"{prefix}_MODEL={r_model}")
+        lines.append(f"{prefix}_BASE_URL={r_url}")
+        lines.append(f"{prefix}_API_KEY={r_key}")
+        lines.append(f"{prefix}_TEMPERATURE={temp}")
+
+    env_path.write_text("\n".join(lines) + "\n", encoding="utf-8")
+    click.echo(f"\n  Configuration saved to {env_path}")
 
 
 # --- harness info ---
