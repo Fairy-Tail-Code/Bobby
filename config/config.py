@@ -184,7 +184,7 @@ def _load_agent_env_config(env: dict[str, str], prefix: str) -> LlmAgentConfig:
         missing_list = ", ".join(missing)
         raise ConfigError(
             f"Missing required LLM config in {env_path}: {missing_list}. "
-            f"Edit {env_path} and fill the values from {env_path.with_name('.env.example')}."
+            f"Run 'harness setup' or edit {env_path} and fill the values from {env_path.with_name('.env.example')}."
         )
     return LlmAgentConfig(
         model=env[f"{prefix}_MODEL"],
@@ -209,7 +209,7 @@ def load_llm_config() -> LlmConfig:
         missing_list = ", ".join(missing_keys)
         raise ConfigError(
             f"Missing required LLM config in {env_path}: {missing_list}. "
-            f"Edit {env_path} and fill the values from {env_path.with_name('.env.example')}."
+            f"Run 'harness setup' or edit {env_path} and fill the values from {env_path.with_name('.env.example')}."
         )
     return LlmConfig(
         pm=_load_agent_env_config(env, "PM"),

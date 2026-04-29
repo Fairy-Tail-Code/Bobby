@@ -320,6 +320,16 @@ set_path_variable() {
 # ---------------------------------------------------------------------------
 run_setup_wizard() {
     local home="$1"
+    if [[ ! -x "$home/bin/harness" ]]; then
+        warn "harness binary not found, skipping interactive setup wizard"
+        return 0
+    fi
+
+    echo ""
+    info "Launching interactive setup wizard..."
+    OPENHARNESS_HOME="$home" "$home/bin/harness" setup
+    return 0
+
     local env_path="$home/.env"
 
     # Ask user if they want to configure, even if .env exists

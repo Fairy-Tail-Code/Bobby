@@ -303,6 +303,18 @@ function Set-PathVariable {
 function Invoke-SetupWizard {
     param([string]$HarnessHome)
 
+    $harnessExe = Join-Path $HarnessHome "bin\harness.exe"
+    if (-not (Test-Path $harnessExe)) {
+        Write-Warn "harness.exe not found, skipping interactive setup wizard"
+        return
+    }
+
+    Write-Host ""
+    Write-Host "  Launching interactive setup wizard..." -ForegroundColor Cyan
+    $env:OPENHARNESS_HOME = $HarnessHome
+    & (Join-Path $HarnessHome "bin\harness.exe") setup
+    return
+
     $envPath = Join-Path $HarnessHome ".env"
 
     # Ask user if they want to configure, even if .env exists

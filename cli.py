@@ -4,6 +4,7 @@ from __future__ import annotations
 import asyncio
 import json
 import os
+import re
 import signal
 import subprocess
 import sys
@@ -11,8 +12,10 @@ import time
 from datetime import datetime
 from io import TextIOWrapper
 from pathlib import Path
+from typing import Sequence
 
 import click
+import yaml
 
 from infrastructure.paths import (
     VERSION,
@@ -352,69 +355,596 @@ def install() -> None:
 
 # --- harness setup ---
 
-_PROVIDERS = {
-    "1": ("OpenAI", "https://api.openai.com/v1", "gpt-4o"),
-    "2": ("Zhipu / GLM", "https://open.bigmodel.cn/api/paas/v4", "GLM-4-Plus"),
-    "3": ("DeepSeek", "https://api.deepseek.com", "deepseek-chat"),
-    "4": ("Anthropic / Claude", "https://api.anthropic.com", "claude-sonnet-4-20250514"),
+_LLM_ROLE_TEMPERATURES = [
+    ("PM", "0.7"),
+    ("PLANNER", "0.7"),
+    ("GENERATOR", "0.4"),
+    ("EVALUATOR", "0.2"),
+]
+
+_ROLE_LABELS = {
+    "PM": "PM",
+    "PLANNER": "Planner",
+    "GENERATOR": "Generator",
+    "EVALUATOR": "Evaluator",
 }
+
+_PROVIDER_PRESETS = {
+    "openai": ("OpenAI", "https://api.openai.com/v1", "gpt-4o"),
+    "zhipu": ("Zhipu / GLM", "https://open.bigmodel.cn/api/paas/v4", "GLM-4-Plus"),
+    "deepseek": ("DeepSeek", "https://api.deepseek.com", "deepseek-chat"),
+    "anthropic": ("Anthropic / Claude", "https://api.anthropic.com", "claude-sonnet-4-20250514"),
+    "custom": ("Other (custom base URL)", "", ""),
+}
+
+_ENV_LINE_RE = re.compile(r"^([A-Za-z0-9_]+)=(.*)$")
+
+
+def _ensure_setup_files() -> None:
+    ensure_dirs()
+    defaults_dir = get_defaults_dir()
+    config_dir = get_config_dir()
+
+    for name in ("harness.yaml", "mcp.yaml", "skill.yaml"):
+        src = defaults_dir / name
+        dst = config_dir / name
+        if not dst.exists() and src.exists():
+            dst.parent.mkdir(parents=True, exist_ok=True)
+            dst.write_text(src.read_text(encoding="utf-8"), encoding="utf-8")
+
+    env_example_path = get_env_path().with_name(".env.example")
+    env_src = defaults_dir / ".env.example"
+    if not env_example_path.exists() and env_src.exists():
+        env_example_path.write_text(env_src.read_text(encoding="utf-8"), encoding="utf-8")
+    if not get_env_path().exists() and env_example_path.exists():
+        get_env_path().write_text(env_example_path.read_text(encoding="utf-8"), encoding="utf-8")
+
+
+def _load_env_values(path: Path) -> dict[str, str]:
+    values: dict[str, str] = {}
+    if not path.exists():
+        return values
+    for raw_line in path.read_text(encoding="utf-8").splitlines():
+        line = raw_line.strip()
+        if not line or line.startswith("#") or "=" not in line:
+            continue
+        key, _, value = line.partition("=")
+        values[key.strip()] = value.strip()
+    return values
+
+
+def _load_setup_defaults(env_path: Path) -> dict[str, str]:
+    values = _load_env_values(env_path.with_name(".env.example"))
+    values.update(_load_env_values(env_path))
+    return values
+
+
+def _load_env_template_text(env_path: Path) -> str:
+    if env_path.exists():
+        return env_path.read_text(encoding="utf-8")
+    env_example_path = env_path.with_name(".env.example")
+    if env_example_path.exists():
+        return env_example_path.read_text(encoding="utf-8")
+    return ""
+
+
+def _merge_env_text(base_text: str, updates: dict[str, str]) -> str:
+    lines = base_text.splitlines()
+    seen: set[str] = set()
+    merged: list[str] = []
+
+    for line in lines:
+        match = _ENV_LINE_RE.match(line)
+        if match:
+            key = match.group(1)
+            if key in updates:
+                merged.append(f"{key}={updates[key]}")
+                seen.add(key)
+                continue
+        merged.append(line)
+
+    missing_keys = [key for key in updates if key not in seen]
+    if missing_keys and merged and merged[-1] != "":
+        merged.append("")
+    for key in missing_keys:
+        merged.append(f"{key}={updates[key]}")
+
+    return "\n".join(merged).rstrip() + "\n"
+
+
+def _write_env_values(env_path: Path, updates: dict[str, str]) -> None:
+    env_path.parent.mkdir(parents=True, exist_ok=True)
+    env_path.write_text(_merge_env_text(_load_env_template_text(env_path), updates), encoding="utf-8")
+
+
+def _confirm_choice(name: str, text: str, default: bool = True) -> bool:
+    del name
+    return click.confirm(f"  {text}", default=default)
+
+
+def _prompt_value(
+    name: str,
+    label: str,
+    default: str = "",
+    secret: bool = False,
+    allow_empty: bool = False,
+) -> str:
+    del name
+    while True:
+        value = click.prompt(
+            f"  {label}",
+            default=default or "",
+            show_default=bool(default) and not secret,
+            hide_input=secret,
+        )
+        if value or allow_empty:
+            return value
+        click.echo("  This value is required.")
+
+
+def _render_menu(title: str, labels: Sequence[str], selected_index: int, description: str | None) -> int:
+    lines = ["", f"  {title}"]
+    if description:
+        lines.extend(f"  {line}" for line in description.splitlines())
+    lines.append("  Use Up/Down to choose, Enter to confirm.")
+    lines.append("")
+    for index, label in enumerate(labels):
+        marker = ">" if index == selected_index else " "
+        lines.append(f"  {marker} {label}")
+    sys.stdout.write("".join(f"\x1b[2K{line}\n" for line in lines))
+    sys.stdout.flush()
+    return len(lines)
+
+
+def _read_menu_key() -> str:
+    if sys.platform == "win32":
+        import msvcrt
+
+        ch = msvcrt.getwch()
+        if ch == "\x03":
+            raise KeyboardInterrupt
+        if ch in ("\x00", "\xe0"):
+            next_ch = msvcrt.getwch()
+            if next_ch == "H":
+                return "up"
+            if next_ch == "P":
+                return "down"
+            return ""
+        if ch == "\r":
+            return "enter"
+        if ch == "\x1b":
+            return "escape"
+        if ch.lower() == "k":
+            return "up"
+        if ch.lower() == "j":
+            return "down"
+        return ""
+
+    import select
+
+    ch = sys.stdin.read(1)
+    if ch == "\x03":
+        raise KeyboardInterrupt
+    if ch in ("\r", "\n"):
+        return "enter"
+    if ch == "\x1b":
+        if select.select([sys.stdin], [], [], 0.05)[0]:
+            next_ch = sys.stdin.read(1)
+            if next_ch == "[" and select.select([sys.stdin], [], [], 0.05)[0]:
+                final_ch = sys.stdin.read(1)
+                if final_ch == "A":
+                    return "up"
+                if final_ch == "B":
+                    return "down"
+        return "escape"
+    if ch.lower() == "k":
+        return "up"
+    if ch.lower() == "j":
+        return "down"
+    return ""
+
+
+def _interactive_select_index(
+    title: str,
+    labels: Sequence[str],
+    default_index: int = 0,
+    description: str | None = None,
+) -> int | None:
+    line_count = 0
+    selected_index = max(0, min(default_index, len(labels) - 1))
+
+    if sys.platform != "win32":
+        import termios
+        import tty
+
+        stdin_fd = sys.stdin.fileno()
+        original_attrs = termios.tcgetattr(stdin_fd)
+        try:
+            tty.setraw(stdin_fd)
+            while True:
+                if line_count:
+                    sys.stdout.write(f"\x1b[{line_count}F")
+                line_count = _render_menu(title, labels, selected_index, description)
+                key = _read_menu_key()
+                if key == "up":
+                    selected_index = (selected_index - 1) % len(labels)
+                elif key == "down":
+                    selected_index = (selected_index + 1) % len(labels)
+                elif key == "enter":
+                    sys.stdout.write("\n")
+                    sys.stdout.flush()
+                    return selected_index
+                elif key == "escape":
+                    sys.stdout.write("\n")
+                    sys.stdout.flush()
+                    return None
+        finally:
+            termios.tcsetattr(stdin_fd, termios.TCSADRAIN, original_attrs)
+
+    while True:
+        if line_count:
+            sys.stdout.write(f"\x1b[{line_count}F")
+        line_count = _render_menu(title, labels, selected_index, description)
+        key = _read_menu_key()
+        if key == "up":
+            selected_index = (selected_index - 1) % len(labels)
+        elif key == "down":
+            selected_index = (selected_index + 1) % len(labels)
+        elif key == "enter":
+            sys.stdout.write("\n")
+            sys.stdout.flush()
+            return selected_index
+        elif key == "escape":
+            sys.stdout.write("\n")
+            sys.stdout.flush()
+            return None
+
+
+def _numeric_select_option(
+    title: str,
+    options: Sequence[tuple[str, str]],
+    default: str | None = None,
+    description: str | None = None,
+) -> str:
+    click.echo(f"\n  {title}")
+    if description:
+        for line in description.splitlines():
+            click.echo(f"  {line}")
+    for index, (_, label) in enumerate(options, start=1):
+        click.echo(f"    {index}) {label}")
+
+    default_index = 1
+    if default is not None:
+        for index, (value, _) in enumerate(options, start=1):
+            if value == default:
+                default_index = index
+                break
+
+    choice = click.prompt("  Enter choice", default=str(default_index), show_default=False)
+    try:
+        selected_index = int(choice) - 1
+    except ValueError:
+        selected_index = default_index - 1
+    if 0 <= selected_index < len(options):
+        return options[selected_index][0]
+    return options[default_index - 1][0]
+
+
+def _select_option(
+    name: str,
+    title: str,
+    options: Sequence[tuple[str, str]],
+    default: str | None = None,
+    description: str | None = None,
+) -> str:
+    del name
+    if not options:
+        raise click.ClickException("No selectable options were provided.")
+
+    if sys.stdin.isatty() and sys.stdout.isatty():
+        default_index = 0
+        if default is not None:
+            for index, (value, _) in enumerate(options):
+                if value == default:
+                    default_index = index
+                    break
+        selected_index = _interactive_select_index(
+            title,
+            [label for _, label in options],
+            default_index,
+            description,
+        )
+        if selected_index is not None:
+            return options[selected_index][0]
+
+    return _numeric_select_option(title, options, default, description)
+
+
+def _get_hitl_mode() -> str:
+    harness_path = get_config_dir() / "harness.yaml"
+    if not harness_path.exists():
+        return "stdin"
+    raw = yaml.safe_load(harness_path.read_text(encoding="utf-8")) or {}
+    return raw.get("harness", {}).get("hitl", {}).get("mode", "stdin")
+
+
+def _save_hitl_mode(mode: str) -> None:
+    harness_path = get_config_dir() / "harness.yaml"
+    if not harness_path.exists():
+        return
+    raw = yaml.safe_load(harness_path.read_text(encoding="utf-8")) or {}
+    harness_raw = raw.setdefault("harness", {})
+    hitl_raw = harness_raw.setdefault("hitl", {})
+    hitl_raw["mode"] = mode
+    harness_path.write_text(
+        yaml.safe_dump(raw, allow_unicode=True, sort_keys=False),
+        encoding="utf-8",
+    )
+
+
+def _prompt_role_values(
+    confirm_name: str,
+    shared_prompt_name: str,
+    shared_prompt_label: str,
+    env_key_template: str,
+    same_value_question: str,
+    existing_env: dict[str, str],
+) -> dict[str, str]:
+    updates: dict[str, str] = {}
+    if _confirm_choice(confirm_name, same_value_question, default=True):
+        shared_value = _prompt_value(
+            shared_prompt_name,
+            shared_prompt_label,
+            default=existing_env.get(env_key_template.format(prefix="PM"), ""),
+        )
+        for prefix, _ in _LLM_ROLE_TEMPERATURES:
+            updates[env_key_template.format(prefix=prefix)] = shared_value
+        return updates
+
+    for prefix, _ in _LLM_ROLE_TEMPERATURES:
+        env_key = env_key_template.format(prefix=prefix)
+        updates[env_key] = _prompt_value(
+            env_key,
+            f"{_ROLE_LABELS[prefix]} {shared_prompt_label}",
+            default=existing_env.get(env_key, ""),
+        )
+    return updates
+
+
+def _configure_email_hitl(existing_env: dict[str, str]) -> dict[str, str]:
+    updates: dict[str, str] = {}
+    updates["SMTP_HOST"] = _prompt_value("SMTP_HOST", "SMTP host", existing_env.get("SMTP_HOST", "smtp.qq.com"))
+    updates["SMTP_PORT"] = _prompt_value("SMTP_PORT", "SMTP port", existing_env.get("SMTP_PORT", "587"))
+    updates["SMTP_USER"] = _prompt_value("SMTP_USER", "SMTP user", existing_env.get("SMTP_USER", ""))
+    updates["SMTP_PASSWORD"] = _prompt_value(
+        "SMTP_PASSWORD",
+        "SMTP password / app password",
+        existing_env.get("SMTP_PASSWORD", ""),
+        secret=True,
+    )
+    updates["SMTP_USE_TLS"] = "true" if _confirm_choice(
+        "SMTP_USE_TLS",
+        "Enable SMTP TLS?",
+        default=existing_env.get("SMTP_USE_TLS", "true").lower() == "true",
+    ) else "false"
+    updates["IMAP_HOST"] = _prompt_value("IMAP_HOST", "IMAP host", existing_env.get("IMAP_HOST", "imap.qq.com"))
+    updates["IMAP_PORT"] = _prompt_value("IMAP_PORT", "IMAP port", existing_env.get("IMAP_PORT", "993"))
+    updates["IMAP_USER"] = _prompt_value(
+        "IMAP_USER",
+        "IMAP user",
+        existing_env.get("IMAP_USER", updates["SMTP_USER"]),
+    )
+    updates["IMAP_PASSWORD"] = _prompt_value(
+        "IMAP_PASSWORD",
+        "IMAP password / app password",
+        existing_env.get("IMAP_PASSWORD", updates["SMTP_PASSWORD"]),
+        secret=True,
+    )
+    updates["IMAP_USE_SSL"] = "true" if _confirm_choice(
+        "IMAP_USE_SSL",
+        "Enable IMAP SSL?",
+        default=existing_env.get("IMAP_USE_SSL", "true").lower() == "true",
+    ) else "false"
+    updates.update(
+        _prompt_role_values(
+            "same_hitl_email",
+            "shared_hitl_email",
+            "human operator email",
+            "HITL_{prefix}_EMAIL",
+            "Use the same operator email for all roles?",
+            existing_env,
+        )
+    )
+    return updates
+
+
+def _configure_dingtalk_hitl(existing_env: dict[str, str]) -> dict[str, str]:
+    updates: dict[str, str] = {}
+    updates["DINGTALK_CLIENT_ID"] = _prompt_value(
+        "DINGTALK_CLIENT_ID",
+        "DingTalk client id",
+        existing_env.get("DINGTALK_CLIENT_ID", ""),
+    )
+    updates["DINGTALK_CLIENT_SECRET"] = _prompt_value(
+        "DINGTALK_CLIENT_SECRET",
+        "DingTalk client secret",
+        existing_env.get("DINGTALK_CLIENT_SECRET", ""),
+        secret=True,
+    )
+    updates["DINGTALK_ROBOT_CODE"] = _prompt_value(
+        "DINGTALK_ROBOT_CODE",
+        "DingTalk robot code",
+        existing_env.get("DINGTALK_ROBOT_CODE", updates["DINGTALK_CLIENT_ID"]),
+    )
+    updates.update(
+        _prompt_role_values(
+            "same_hitl_dingtalk_user_id",
+            "shared_hitl_dingtalk_user_id",
+            "DingTalk user id",
+            "HITL_{prefix}_DINGTALK_USER_ID",
+            "Use the same DingTalk user id for all roles?",
+            existing_env,
+        )
+    )
+    return updates
+
+
+def _configure_feishu_hitl(existing_env: dict[str, str], updates: dict[str, str]) -> dict[str, str]:
+    if not updates.get("FEISHU_APP_ID"):
+        updates["FEISHU_APP_ID"] = _prompt_value(
+            "FEISHU_APP_ID",
+            "Feishu app id",
+            existing_env.get("FEISHU_APP_ID", ""),
+        )
+    if not updates.get("FEISHU_APP_SECRET"):
+        updates["FEISHU_APP_SECRET"] = _prompt_value(
+            "FEISHU_APP_SECRET",
+            "Feishu app secret",
+            existing_env.get("FEISHU_APP_SECRET", ""),
+            secret=True,
+        )
+    updates.update(
+        _prompt_role_values(
+            "same_hitl_feishu_open_id",
+            "shared_hitl_feishu_open_id",
+            "Feishu open id",
+            "HITL_{prefix}_FEISHU_OPEN_ID",
+            "Use the same Feishu open id for all roles?",
+            existing_env,
+        )
+    )
+    return updates
 
 
 @cli.command()
 def setup() -> None:
-    """Interactive configuration wizard for API keys."""
+    """Interactive configuration wizard for .env and HITL settings."""
+    _ensure_setup_files()
     env_path = get_env_path()
+    existing_env = _load_setup_defaults(env_path)
 
-    # Check if .env already has keys
-    if env_path.exists():
-        content = env_path.read_text(encoding="utf-8")
-        import re
-        if re.search(r'_API_KEY=\S+', content):
-            if not click.confirm("  .env already has API keys. Reconfigure?"):
-                return
+    if any(existing_env.get(f"{prefix}_API_KEY") for prefix, _ in _LLM_ROLE_TEMPERATURES):
+        if not _confirm_choice("reconfigure_env", ".env already has API keys. Reconfigure?", default=False):
+            return
 
     click.echo("")
     click.echo("  ── Configuration Wizard ──")
     click.echo("")
 
-    click.echo("  Which LLM provider do you want to use?")
-    for k, (name, _, _) in _PROVIDERS.items():
-        click.echo(f"    {k}) {name}")
-    click.echo("    5) Other (custom base URL)")
+    provider_key = _select_option(
+        "llm_provider",
+        "Select the LLM provider",
+        [(key, value[0]) for key, value in _PROVIDER_PRESETS.items()],
+        default="openai",
+        description="This fills the 4 agent model/base_url/api_key entries in ~/.openharness/.env.",
+    )
+    _, default_url, default_model = _PROVIDER_PRESETS[provider_key]
 
-    choice = click.prompt("  Enter choice", default="1", show_default=False)
-    if choice in _PROVIDERS:
-        _, default_url, default_model = _PROVIDERS[choice]
-    else:
-        default_url, default_model = "", ""
-
-    base_url = click.prompt("  Base URL", default=default_url)
-    model = click.prompt("  Model name", default=default_model)
-    api_key = click.prompt("  API Key", hide_input=True)
+    base_url = _prompt_value(
+        "shared_base_url",
+        "Base URL",
+        existing_env.get("PM_BASE_URL", default_url),
+    )
+    model = _prompt_value(
+        "shared_model",
+        "Model name",
+        existing_env.get("PM_MODEL", default_model),
+    )
+    api_key = _prompt_value(
+        "shared_api_key",
+        "API key",
+        existing_env.get("PM_API_KEY", ""),
+        secret=True,
+    )
     if not api_key:
         click.echo("  No API key provided. You can edit .env later.")
         return
 
-    same_all = click.confirm("  Use same config for all 4 agents (PM, Planner, Generator, Evaluator)?", default=True)
+    same_all = _confirm_choice(
+        "same_llm_config",
+        "Use the same API config for all 4 agents (PM, Planner, Generator, Evaluator)?",
+        default=True,
+    )
 
-    roles = [("PM", "0.7"), ("PLANNER", "0.7"), ("GENERATOR", "0.4"), ("EVALUATOR", "0.2")]
-    lines = []
-
-    for prefix, temp in roles:
+    updates: dict[str, str] = {}
+    for prefix, temp in _LLM_ROLE_TEMPERATURES:
         if same_all:
             r_model, r_url, r_key = model, base_url, api_key
         else:
             click.echo(f"\n  ── {prefix} Agent ──")
-            r_model = click.prompt("  Model", default=model)
-            r_url = click.prompt("  Base URL", default=base_url)
-            r_key = click.prompt("  API Key", default=api_key, hide_input=True)
-        lines.append(f"{prefix}_MODEL={r_model}")
-        lines.append(f"{prefix}_BASE_URL={r_url}")
-        lines.append(f"{prefix}_API_KEY={r_key}")
-        lines.append(f"{prefix}_TEMPERATURE={temp}")
+            r_model = _prompt_value(f"{prefix}_MODEL", "Model", existing_env.get(f"{prefix}_MODEL", model))
+            r_url = _prompt_value(f"{prefix}_BASE_URL", "Base URL", existing_env.get(f"{prefix}_BASE_URL", base_url))
+            r_key = _prompt_value(
+                f"{prefix}_API_KEY",
+                "API key",
+                existing_env.get(f"{prefix}_API_KEY", api_key),
+                secret=True,
+            )
+        updates[f"{prefix}_MODEL"] = r_model
+        updates[f"{prefix}_BASE_URL"] = r_url
+        updates[f"{prefix}_API_KEY"] = r_key
+        updates[f"{prefix}_TEMPERATURE"] = temp
 
-    env_path.write_text("\n".join(lines) + "\n", encoding="utf-8")
+    if _confirm_choice(
+        "configure_gitee",
+        "Configure optional Gitee integration now?",
+        default=bool(existing_env.get("GITEE_ACCESS_TOKEN") or existing_env.get("GITEE_BASE_URL")),
+    ):
+        updates["GITEE_ACCESS_TOKEN"] = _prompt_value(
+            "GITEE_ACCESS_TOKEN",
+            "Gitee access token",
+            existing_env.get("GITEE_ACCESS_TOKEN", ""),
+            secret=True,
+            allow_empty=True,
+        )
+        updates["GITEE_BASE_URL"] = _prompt_value(
+            "GITEE_BASE_URL",
+            "Gitee base URL",
+            existing_env.get("GITEE_BASE_URL", "https://gitee.com/api/v5"),
+            allow_empty=True,
+        )
+
+    if _confirm_choice(
+        "configure_feishu_service",
+        "Configure Feishu service credentials for 'harness server' now?",
+        default=bool(existing_env.get("FEISHU_APP_ID") or existing_env.get("FEISHU_APP_SECRET")),
+    ):
+        updates["FEISHU_APP_ID"] = _prompt_value(
+            "FEISHU_APP_ID",
+            "Feishu app id",
+            existing_env.get("FEISHU_APP_ID", ""),
+        )
+        updates["FEISHU_APP_SECRET"] = _prompt_value(
+            "FEISHU_APP_SECRET",
+            "Feishu app secret",
+            existing_env.get("FEISHU_APP_SECRET", ""),
+            secret=True,
+        )
+
+    hitl_mode = _select_option(
+        "hitl_mode",
+        "Select the human review channel",
+        [
+            ("stdin", "stdin (local terminal only)"),
+            ("email", "email"),
+            ("dingtalk", "dingtalk"),
+            ("feishu", "feishu"),
+        ],
+        default=_get_hitl_mode(),
+        description="This also updates config/harness.yaml so the runtime matches the generated .env.",
+    )
+    _save_hitl_mode(hitl_mode)
+
+    if hitl_mode == "email":
+        updates.update(_configure_email_hitl(existing_env))
+    elif hitl_mode == "dingtalk":
+        updates.update(_configure_dingtalk_hitl(existing_env))
+    elif hitl_mode == "feishu":
+        updates = _configure_feishu_hitl(existing_env, updates)
+
+    _write_env_values(env_path, updates)
     click.echo(f"\n  Configuration saved to {env_path}")
+    click.echo(f"  HITL mode saved to {get_config_dir() / 'harness.yaml'}")
 
 
 # --- harness info ---

@@ -103,6 +103,7 @@ def test_load_llm_config_reports_all_missing_required_keys(monkeypatch) -> None:
         assert "GENERATOR_MODEL" in message
         assert "EVALUATOR_MODEL" in message
         assert ".env.example" in message
+        assert "harness setup" in message
 
 
 def test_load_mcp_config(monkeypatch) -> None:
