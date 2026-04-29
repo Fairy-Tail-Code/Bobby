@@ -209,10 +209,14 @@ function Initialize-DefaultConfigs {
     param([string]$HarnessHome)
 
     $configDir = Join-Path $HarnessHome "config"
-    $defaultsDir = Join-Path $PSScriptRoot "defaults"
+    $defaultsDir = ""
+    if ($PSScriptRoot) {
+        $candidate = Join-Path $PSScriptRoot "defaults"
+        if (Test-Path $candidate) { $defaultsDir = $candidate }
+    }
 
-    # If defaults dir doesn't exist (running via irm), download them
-    if (-not (Test-Path $defaultsDir)) {
+    # If defaults dir not found (running via irm), download them
+    if (-not $defaultsDir) {
         $defaultsDir = Join-Path $HarnessHome "defaults_temp"
         New-Item -ItemType Directory -Path $defaultsDir -Force | Out-Null
         $baseUrl = "https://raw.githubusercontent.com/$script:RepoOwner/$script:RepoName/main/install/defaults"
