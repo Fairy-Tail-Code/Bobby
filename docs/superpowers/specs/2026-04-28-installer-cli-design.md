@@ -17,6 +17,14 @@
 │   ├── mcp.yaml
 │   ├── skill.yaml
 │   └── .env.example          # 环境变量模板（不含密钥）
+├── agents/
+│   └── prompts/              # Agent 系统提示词（从 bundle 拷贝，用户可编辑）
+│       ├── pm.md
+│       ├── planner.md
+│       ├── generator.md
+│       ├── evaluator.md
+│       ├── single.md
+│       └── user.md
 ├── session/                  # 空，运行时写入
 ├── memory/
 │   └── user_profile.md       # 默认空模板
@@ -123,6 +131,7 @@ def get_skills_dir() -> Path:              # get_home() / "skills"
 def get_workspace_dir() -> Path:           # get_home() / "workspace"
 def get_env_path() -> Path:                # get_home() / ".env"
 def get_server_pid_path() -> Path:         # get_home() / ".server.pid"
+def get_agent_prompts_dir() -> Path:       # get_home() / "agents" / "prompts"
 def get_project_dir() -> Path:             # PyInstaller sys._MEIPASS 或源码根目录
 ```
 
@@ -139,14 +148,20 @@ def get_project_dir() -> Path:             # PyInstaller sys._MEIPASS 或源码�
 ### PyInstaller Resource Handling
 
 - `skills/system/` 目录打包进可执行文件
-- `get_project_dir()` 在打包时返回 `sys._MEIPASS`，开发时返回 `Path(__file__).parent
+- `agents/prompts/` 目录打包进可执行文件，首次运行时拷贝到 `~/.openharness/agents/prompts/`
+- `get_project_dir()` 在打包时返回 `sys._MEIPASS`，开发时返回 `Path(__file__).parent`
 - system skills 始终从 `get_project_dir() / "skills" / "system"` 读取
+- agent prompts 从 `~/.openharness/agents/prompts/` 读取（`get_agent_prompts_dir()`），不在临时目录
 - user skills 从 `get_skills_dir() / "user"` 读取
 
 ### Not in User Directory
 
 - `skills/system/` — 跟随可执行文件
 - `agents/`、`infrastructure/` — 编译进可执行文件
+
+### In User Directory (User-Editable)
+
+- `agents/prompts/` — 从 bundle 拷贝到 `~/.openharness/agents/prompts/`，用户可自定义 Agent 提示词
 
 ## Section 4: Installer Scripts
 

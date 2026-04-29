@@ -310,3 +310,27 @@ AG2 将 handoff 内部工具注册给所有 agent，包括 `terminate_command`�
 - `infrastructure/session_manager.py` — `_create_session` 接收 `open_id` 和 `chat_type`，`handle_message` 增加群聊用户校验
 - `infrastructure/mcp_servers/workspace_server.py` — 引入 `filelock`，新增 `_file_lock()` 辅助函数，`write_file`/`delete_file`/`move_file`/`apply_patch`/`_write_patch_lines` 加锁
 - `pyproject.toml` — 新增 `filelock>=3.29.0` 依赖
+
+## 2026-04-29
+
+### 架构决策
+
+#### Agent Prompts 从临时目录迁移到用户目录
+
+- **背景**：PyInstaller onefile 模式下，`loader.py` 使用 `Path(__file__).parent` 解析到 `%TEMP%\_MEIxxxxx\agents\prompts\`。由于 `harness.spec` 的 `datas=[]` 未包含 prompt `.md` 文件，导致 `FileNotFoundError`。即使修复了打包配置，临时目录在每次运行时都会重新生成，用户也无法持久化自定义提示词。
+- **方案**：
+  1. `get_agent_prompts_dir()` 改为返回 `get_home() / "agents" / "prompts"`，即 `~/.openharness/agents/prompts/`
+  2. 新增 `_get_bundled_prompts_dir()` 返回打包/源码中的原始提示词目录
+  3. 新增 `ensure_agent_prompts()` 在首次运行时从 bundle 拷贝到用户目录（不覆盖已有）
+  4. `loader.py` 改用 `get_agent_prompts_dir()` 替代 `Path(__file__).parent`
+  5. `harness.spec` 添加 `agents/prompts/*.md` 到 datas 确保打包时包含
+  6. 安装脚本（`install.sh`、`install.ps1`）增加 prompts 拷贝步骤
+
+### 文件变更清单
+
+- `infrastructure/paths.py` — `get_agent_prompts_dir()` 改为返回 `get_home()` 路径；新增 `_get_bundled_prompts_dir()`、`ensure_agent_prompts()`；`ensure_dirs()` 末尾调用 `ensure_agent_prompts()`
+- `agents/prompts/loader.py` — 改用 `get_agent_prompts_dir()` 替代 `Path(__file__).parent`
+- `harness.spec` — `datas` 添加 `agents/prompts/*.md`
+- `install/install.sh` — 目录列表新增 `$home/agents/prompts`；新增 prompts 拷贝逻辑
+- `install/install.ps1` — 目录列表新增 `agents\prompts`；新增 prompts 拷贝逻辑
+- `tests/test_prompt_loader.py` — 新增 `test_prompts_dir_is_under_home` 和 `test_ensure_agent_prompts_copies_files`

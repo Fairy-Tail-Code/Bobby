@@ -95,7 +95,7 @@ python server.py
 3. Windows 对该 PID 的查询/终止表现为异常而不是“正常不存在”
 4. 安装版 `harness.exe` 在当前沙箱环境中还额外触发了 PyInstaller 临时解包目录权限问题
 
-第 4 点不是这次 CLI 逻辑 bug 的主根因，但说明 onefile 二进制在部分环境里还会受 `%TEMP%` 解包权限影响。
+第 4 点不是这次 CLI 逻辑 bug 的主根因，但说明 onefile 二进制在部分环境里还会受 `%TEMP%` 解包权限影响。同日还发现 Agent prompts 因从 `%TEMP%` 加载导致 `FileNotFoundError`（prompts 已迁移到 `~/.openharness/agents/prompts/`，见开发经验 2026-04-29 条目）。
 
 ## 修复方案
 
