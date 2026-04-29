@@ -124,30 +124,30 @@ function Test-Git {
 # ---------------------------------------------------------------------------
 
 function Initialize-DirectoryStructure {
-    param([string]$Home)
+    param([string]$HarnessHome)
 
     $dirs = @(
-        $Home,
-        Join-Path $Home "bin",
-        Join-Path $Home "config",
-        Join-Path $Home "session",
-        Join-Path $Home "memory",
-        Join-Path $Home "skills\user",
-        Join-Path $Home "workspace\.tasks",
-        Join-Path $Home ".openharness"
+        $HarnessHome
+        (Join-Path $HarnessHome "bin")
+        (Join-Path $HarnessHome "config")
+        (Join-Path $HarnessHome "session")
+        (Join-Path $HarnessHome "memory")
+        (Join-Path $HarnessHome "skills\user")
+        (Join-Path $HarnessHome "workspace\.tasks")
+        (Join-Path $HarnessHome ".openharness")
     )
     foreach ($dir in $dirs) {
         if (-not (Test-Path $dir)) {
             New-Item -ItemType Directory -Path $dir -Force | Out-Null
         }
     }
-    Write-Ok "Directory structure created at $Home"
+    Write-Ok "Directory structure created at $HarnessHome"
 }
 
 function Install-HarnessBinary {
-    param([string]$Home, [string]$Version)
+    param([string]$HarnessHome, [string]$Version)
 
-    $binDir = Join-Path $Home "bin"
+    $binDir = Join-Path $HarnessHome "bin"
     $dest = Join-Path $binDir "harness.exe"
 
     if (Test-Path $dest) {
@@ -169,7 +169,7 @@ function Install-HarnessBinary {
         # Fallback: try building from source if Python + uv available
         if ($script:HasPython -and $script:HasUv) {
             Write-Warn "Download failed. Attempting to build from source..."
-            return Build-FromSource -Home $Home
+            return Build-FromSource -HarnessHome $HarnessHome
         }
         Write-Err "Download failed and cannot build from source: $_"
         return $false
@@ -177,15 +177,15 @@ function Install-HarnessBinary {
 }
 
 function Build-FromSource {
-    param([string]$Home)
+    param([string]$HarnessHome)
 
-    $binDir = Join-Path $Home "bin"
+    $binDir = Join-Path $HarnessHome "bin"
     $dest = Join-Path $binDir "harness.exe"
 
     Write-Host "  Building harness from source..."
 
     # Clone or use existing
-    $repoDir = Join-Path $Home "repo"
+    $repoDir = Join-Path $HarnessHome "repo"
     if (-not (Test-Path $repoDir)) {
         git clone "https://github.com/$script:RepoOwner/$script:RepoName.git" $repoDir
     }
@@ -206,14 +206,14 @@ function Build-FromSource {
 }
 
 function Initialize-DefaultConfigs {
-    param([string]$Home)
+    param([string]$HarnessHome)
 
-    $configDir = Join-Path $Home "config"
+    $configDir = Join-Path $HarnessHome "config"
     $defaultsDir = Join-Path $PSScriptRoot "defaults"
 
     # If defaults dir doesn't exist (running via irm), download them
     if (-not (Test-Path $defaultsDir)) {
-        $defaultsDir = Join-Path $Home "defaults_temp"
+        $defaultsDir = Join-Path $HarnessHome "defaults_temp"
         New-Item -ItemType Directory -Path $defaultsDir -Force | Out-Null
         $baseUrl = "https://raw.githubusercontent.com/$script:RepoOwner/$script:RepoName/main/install/defaults"
         foreach ($file in @("harness.yaml", "mcp.yaml", "skill.yaml", ".env.example", "user_profile.md")) {
@@ -236,9 +236,9 @@ function Initialize-DefaultConfigs {
         }
     }
 
-    $envExampleDst = Join-Path $Home ".env.example"
+    $envExampleDst = Join-Path $HarnessHome ".env.example"
     # Copy .env.example as .env
-    $envDst = Join-Path $Home ".env"
+    $envDst = Join-Path $HarnessHome ".env"
     $envSrc = Join-Path $defaultsDir ".env.example"
     if (-not (Test-Path $envExampleDst) -and (Test-Path $envSrc)) {
         Copy-Item $envSrc $envExampleDst
@@ -250,7 +250,7 @@ function Initialize-DefaultConfigs {
     }
 
     # Copy user_profile.md
-    $profileDst = Join-Path $Home "memory\user_profile.md"
+    $profileDst = Join-Path $HarnessHome "memory\user_profile.md"
     $profileSrc = Join-Path $defaultsDir "user_profile.md"
     if (-not (Test-Path $profileDst) -and (Test-Path $profileSrc)) {
         Copy-Item $profileSrc $profileDst
@@ -258,7 +258,7 @@ function Initialize-DefaultConfigs {
     }
 
     # Write install marker
-    $markerPath = Join-Path $Home ".install-marker"
+    $markerPath = Join-Path $HarnessHome ".install-marker"
     if (-not (Test-Path $markerPath)) {
         $marker = @{
             version = "1.0.0"
@@ -272,9 +272,9 @@ function Initialize-DefaultConfigs {
 }
 
 function Set-PathVariable {
-    param([string]$Home)
+    param([string]$HarnessHome)
 
-    $binDir = Join-Path $Home "bin"
+    $binDir = Join-Path $HarnessHome "bin"
     $userPath = [Environment]::GetEnvironmentVariable("Path", "User")
     if ($userPath -split ";" | Where-Object { $_ -eq $binDir }) {
         Write-Ok "PATH already contains $binDir"
@@ -293,8 +293,8 @@ function Set-PathVariable {
 function Main {
     Write-Banner
 
-    $home = Get-HarnessHome
-    Write-Host "  Install directory: $home" -ForegroundColor White
+    $installHome = Get-HarnessHome
+    Write-Host "  Install directory: $installHome" -ForegroundColor White
     Write-Host ""
 
     # Dependency checks
@@ -304,10 +304,10 @@ function Main {
     Write-Host ""
 
     # Install
-    Initialize-DirectoryStructure $home
-    Install-HarnessBinary $home $Version
-    Initialize-DefaultConfigs $home
-    Set-PathVariable $home
+    Initialize-DirectoryStructure $installHome
+    Install-HarnessBinary $installHome $Version
+    Initialize-DefaultConfigs $installHome
+    Set-PathVariable $installHome
 
     # Summary
     Write-Host ""
@@ -315,12 +315,12 @@ function Main {
     Write-Host "  ║     Installation Complete!            ║" -ForegroundColor Green
     Write-Host "  ╚══════════════════════════════════════╝" -ForegroundColor Green
     Write-Host ""
-    Write-Host "  Binary:  $home\bin\harness.exe" -ForegroundColor White
-    Write-Host "  Config:  $home\config\" -ForegroundColor White
-    Write-Host "  .env:    $home\.env" -ForegroundColor White
+    Write-Host "  Binary:  $installHome\bin\harness.exe" -ForegroundColor White
+    Write-Host "  Config:  $installHome\config\" -ForegroundColor White
+    Write-Host "  .env:    $installHome\.env" -ForegroundColor White
     Write-Host ""
     Write-Host "  Next steps:" -ForegroundColor Yellow
-    Write-Host "    1. Edit $home\.env with your API keys"
+    Write-Host "    1. Edit $installHome\.env with your API keys"
     Write-Host "    2. Open a new terminal (to refresh PATH)"
     Write-Host "    3. Run: harness info"
 
