@@ -326,16 +326,17 @@ function Invoke-SetupWizard {
     param([string]$HarnessHome)
 
     $harnessExe = Join-Path $HarnessHome "bin\harness.exe"
-    if (-not (Test-Path $harnessExe)) {
-        Write-Warn "harness.exe not found, skipping interactive setup wizard"
-        return
+    if (Test-Path $harnessExe) {
+        Write-Host ""
+        Write-Host "  Launching interactive setup wizard..." -ForegroundColor Cyan
+        $env:OPENHARNESS_HOME = $HarnessHome
+        try {
+            & (Join-Path $HarnessHome "bin\harness.exe") setup
+            return
+        } catch {
+            Write-Warn "harness.exe setup failed, falling back to built-in installer wizard: $($_.Exception.Message)"
+        }
     }
-
-    Write-Host ""
-    Write-Host "  Launching interactive setup wizard..." -ForegroundColor Cyan
-    $env:OPENHARNESS_HOME = $HarnessHome
-    & (Join-Path $HarnessHome "bin\harness.exe") setup
-    return
 
     $envPath = Join-Path $HarnessHome ".env"
 

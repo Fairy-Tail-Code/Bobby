@@ -193,3 +193,4 @@ def test_install_scripts_delegate_to_harness_setup() -> None:
 
     assert 'OPENHARNESS_HOME="$home" "$home/bin/harness" setup' in install_sh
     assert '& (Join-Path $HarnessHome "bin\\harness.exe") setup' in install_ps1
+    assert 'falling back to built-in installer wizard' in install_ps1
