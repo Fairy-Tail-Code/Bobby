@@ -130,6 +130,7 @@ init_directory_structure() {
         "$home/memory"
         "$home/skills/user"
         "$home/workspace/.tasks"
+        "$home/agents/prompts"
         "$home/.openharness"
     )
     for dir in "${dirs[@]}"; do
@@ -272,6 +273,23 @@ init_default_configs() {
     if [[ ! -f "$profile_dst" ]] && [[ -f "$profile_src" ]]; then
         cp "$profile_src" "$profile_dst"
         ok "Installed user_profile.md"
+    fi
+
+    # Copy agent prompts
+    local prompts_dst="$home/agents/prompts"
+    local prompts_src="$script_dir/../agents/prompts"
+    if [[ ! -d "$prompts_src" ]]; then
+        prompts_src="$home/repo/agents/prompts"
+    fi
+    if [[ -d "$prompts_src" ]]; then
+        for md_file in "$prompts_src"/*.md; do
+            local base_name
+            base_name=$(basename "$md_file")
+            if [[ ! -f "$prompts_dst/$base_name" ]]; then
+                cp "$md_file" "$prompts_dst/$base_name"
+            fi
+        done
+        ok "Installed agent prompts"
     fi
 
     # Write install marker

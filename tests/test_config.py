@@ -58,6 +58,33 @@ def test_load_llm_config(monkeypatch) -> None:
         assert config.evaluator.temperature == 0.2
 
 
+def test_load_llm_config_accepts_utf8_bom(monkeypatch) -> None:
+    with _temp_openharness_home() as home_dir:
+        monkeypatch.setenv("OPENHARNESS_HOME", str(home_dir))
+        bom_prefixed_env = (
+            "\ufeffPM_MODEL=test-model\n"
+            "PM_BASE_URL=http://localhost:11434/v1\n"
+            "PM_API_KEY=test-key\n"
+            "PLANNER_MODEL=test-model\n"
+            "PLANNER_BASE_URL=http://localhost:11434/v1\n"
+            "PLANNER_API_KEY=test-key\n"
+            "GENERATOR_MODEL=test-model\n"
+            "GENERATOR_BASE_URL=http://localhost:11434/v1\n"
+            "GENERATOR_API_KEY=test-key\n"
+            "EVALUATOR_MODEL=test-model\n"
+            "EVALUATOR_BASE_URL=http://localhost:11434/v1\n"
+            "EVALUATOR_API_KEY=test-key\n"
+        )
+        (home_dir / ".env").write_text(bom_prefixed_env, encoding="utf-8")
+
+        config = load_llm_config()
+
+        assert config.pm.model == "test-model"
+        assert config.planner.model == "test-model"
+        assert config.generator.model == "test-model"
+        assert config.evaluator.model == "test-model"
+
+
 def test_load_llm_config_default_temperature(monkeypatch) -> None:
     with _temp_openharness_home() as home_dir:
         monkeypatch.setenv("OPENHARNESS_HOME", str(home_dir))

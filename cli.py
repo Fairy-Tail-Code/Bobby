@@ -280,7 +280,7 @@ _MCP_SERVERS = {
 }
 
 
-@cli.group(hidden=True)
+@cli.group(name="_mcp", hidden=True)
 def _mcp():
     """Internal: run MCP servers."""
 

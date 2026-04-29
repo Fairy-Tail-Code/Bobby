@@ -135,6 +135,7 @@ function Initialize-DirectoryStructure {
         (Join-Path $HarnessHome "memory")
         (Join-Path $HarnessHome "skills\user")
         (Join-Path $HarnessHome "workspace\.tasks")
+        (Join-Path $HarnessHome "agents\prompts")
         (Join-Path $HarnessHome ".openharness")
     )
     foreach ($dir in $dirs) {
@@ -265,6 +266,27 @@ function Initialize-DefaultConfigs {
     if (-not (Test-Path $profileDst) -and (Test-Path $profileSrc)) {
         Copy-Item $profileSrc $profileDst
         Write-Ok "Installed user_profile.md"
+    }
+
+    # Copy agent prompts
+    $promptsDst = Join-Path $HarnessHome "agents\prompts"
+    $promptsSrc = ""
+    if ($PSScriptRoot) {
+        $candidate = Join-Path $PSScriptRoot "..\agents\prompts"
+        if (Test-Path $candidate) { $promptsSrc = $candidate }
+    }
+    if (-not $promptsSrc) {
+        $candidate = Join-Path $HarnessHome "repo\agents\prompts"
+        if (Test-Path $candidate) { $promptsSrc = $candidate }
+    }
+    if ($promptsSrc) {
+        foreach ($mdFile in (Get-ChildItem -Path $promptsSrc -Filter "*.md")) {
+            $dst = Join-Path $promptsDst $mdFile.Name
+            if (-not (Test-Path $dst)) {
+                Copy-Item $mdFile.FullName $dst
+            }
+        }
+        Write-Ok "Installed agent prompts"
     }
 
     # Write install marker

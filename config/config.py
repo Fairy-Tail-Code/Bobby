@@ -166,7 +166,7 @@ def _load_dotenv(env_path: Path) -> dict[str, str]:
     env = {}
     if not env_path.exists():
         return env
-    for line in env_path.read_text(encoding="utf-8").splitlines():
+    for line in env_path.read_text(encoding="utf-8-sig").splitlines():
         line = line.strip()
         if not line or line.startswith("#"):
             continue

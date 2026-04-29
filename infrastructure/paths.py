@@ -88,8 +88,37 @@ def get_defaults_dir() -> Path:
 
 
 def get_agent_prompts_dir() -> Path:
-    """Return the directory containing agent prompt markdown files."""
+    """Return the directory containing agent prompt markdown files.
+
+    Prompts live under ~/.openharness/agents/prompts/ so they persist
+    across PyInstaller temp-directory extractions and are user-editable.
+    """
+    return get_home() / "agents" / "prompts"
+
+
+def _get_bundled_prompts_dir() -> Path:
+    """Return the prompts directory bundled with the application.
+
+    In PyInstaller mode this is sys._MEIPASS/agents/prompts; in dev
+    it is the repo source tree.  Used as the source for initial copy.
+    """
     return get_project_dir() / "agents" / "prompts"
+
+
+def ensure_agent_prompts() -> None:
+    """Copy bundled prompts to ~/.openharness/agents/prompts/ if missing."""
+    dest_dir = get_agent_prompts_dir()
+    src_dir = _get_bundled_prompts_dir()
+
+    if not src_dir.exists():
+        return
+
+    dest_dir.mkdir(parents=True, exist_ok=True)
+
+    for md_file in src_dir.glob("*.md"):
+        dst = dest_dir / md_file.name
+        if not dst.exists():
+            dst.write_text(md_file.read_text(encoding="utf-8"), encoding="utf-8")
 
 
 def ensure_dirs() -> None:
@@ -107,3 +136,5 @@ def ensure_dirs() -> None:
         get_home() / "collected",
     ]:
         d.mkdir(parents=True, exist_ok=True)
+
+    ensure_agent_prompts()

@@ -5,7 +5,9 @@ a = Analysis(
     ['cli.py'],
     pathex=[],
     binaries=[],
-    datas=[],
+    datas=[
+        ('agents/prompts/*.md', 'agents/prompts'),
+    ],
     hiddenimports=[
         'tiktoken_ext',
         'tiktoken_ext.openai_public',
