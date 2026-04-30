@@ -51,7 +51,9 @@ def register_tools_for_agent(
                 func_or_tool=tool_func,
                 parameters_json_schema=tool_info.input_schema,
             )
+            ## 注册描述
             ag2_tool.register_for_llm(agent)
+            #  注册实际的函数实现
             ag2_tool.register_for_execution(agent)
             logger.debug(
                 "Registered tool '%s' from server '%s' for agent '%s'",
