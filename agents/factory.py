@@ -188,6 +188,11 @@ def setup_single_handoffs(agents: dict[str, ConversableAgent], hitl_mode: str = 
     assistant.handoffs = Handoffs()
     assistant.handoffs.add_llm_conditions([
         OnCondition(
+            target=TerminateTarget(),
+            condition=StringLLMCondition(
+                "TERMINATE，当用户明确表示要取消、终止、不再继续任务时"),
+        ),
+        OnCondition(
             target=human_target,
             condition=StringLLMCondition(
                 "TRANSFER TO USER，当需要向用户提问、确认需求、或审批风险操作时"),
@@ -235,9 +240,16 @@ def setup_handoffs(agents: dict[str, ConversableAgent], hitl_mode: str = "stdin"
         generator_human = AgentTarget(user)
         evaluator_human = AgentTarget(user)
 
+    _TERMINATE_CONDITION = StringLLMCondition(
+        "TERMINATE，当用户明确表示要取消、终止、不再继续任务时")
+
     # PM handoffs
     pm.handoffs = Handoffs()
     pm.handoffs.add_llm_conditions([
+        OnCondition(
+            target=TerminateTarget(),
+            condition=_TERMINATE_CONDITION,
+        ),
         OnCondition(
             target=AgentTarget(planner),
             condition=StringLLMCondition("TRANSFER TO PLANNER，当PRD已完成且经过用户确认，可以交给Planner进行技术拆解时"),
@@ -251,6 +263,10 @@ def setup_handoffs(agents: dict[str, ConversableAgent], hitl_mode: str = "stdin"
 
     planner.handoffs = Handoffs()
     planner.handoffs.add_llm_conditions([
+        OnCondition(
+            target=TerminateTarget(),
+            condition=_TERMINATE_CONDITION,
+        ),
         OnCondition(
             target=AgentTarget(generator),
             condition=StringLLMCondition("TRANSFER TO GENERATOR,当plan撰写完成并需要将计划交接给generator开始编程时，或者当generator提出了问题需要向generator回答时"),
@@ -269,6 +285,10 @@ def setup_handoffs(agents: dict[str, ConversableAgent], hitl_mode: str = "stdin"
     generator.handoffs = Handoffs()
     generator.handoffs.add_llm_conditions([
         OnCondition(
+            target=TerminateTarget(),
+            condition=_TERMINATE_CONDITION,
+        ),
+        OnCondition(
             target=AgentTarget(evaluator),
             condition=StringLLMCondition("TRANSFER TO EVALUATOR，当代码编写完成需要交给reviewer检查时"),
         ),
@@ -284,6 +304,10 @@ def setup_handoffs(agents: dict[str, ConversableAgent], hitl_mode: str = "stdin"
 
     evaluator.handoffs = Handoffs()
     evaluator.handoffs.add_llm_conditions([
+        OnCondition(
+            target=TerminateTarget(),
+            condition=_TERMINATE_CONDITION,
+        ),
         OnCondition(
             target=AgentTarget(generator),
             condition=StringLLMCondition("TRANSFER TO GENERATOR"),

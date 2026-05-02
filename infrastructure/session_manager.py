@@ -10,9 +10,11 @@ import json
 import logging
 import re
 from pathlib import Path
+from typing import Callable
 
 from config.config import HarnessConfig, LlmConfig
-from infrastructure.feishu_bot import FeishuBotService
+from infrastructure.channel.channel import ChannelAdapter
+from infrastructure.frontend import Frontend
 from infrastructure.mcp.manager import McpManager
 from infrastructure.paths import get_session_dir
 from infrastructure.session_snapshots import find_snapshot_path, iter_snapshot_paths
@@ -34,17 +36,19 @@ class SessionManager:
     """Manages multiple SwarmSessions keyed by chat_id.
 
     Args:
-        bot:            Shared FeishuBotService.
-        mcp_manager:    Shared McpManager.
-        llm_config:     LLM configuration.
-        harness_config: Harness configuration.
-        skill_registry: Skill registry.
-        session_dir:    Directory for saving chat history.
+        frontend:        Shared Frontend (e.g. FeishuBotService).
+        mcp_manager:     Shared McpManager.
+        llm_config:      LLM configuration.
+        harness_config:  Harness configuration.
+        skill_registry:  Skill registry.
+        session_dir:     Directory for saving chat history.
+        channel_factory: Callable that creates a ChannelAdapter for a chat_id.
+        hitl_mode:       HITL mode string passed to SwarmSession.
     """
 
     def __init__(
         self,
-        bot: FeishuBotService | None,
+        frontend: Frontend | None,
         mcp_manager: McpManager,
         llm_config: LlmConfig,
         harness_config: HarnessConfig,
@@ -52,10 +56,12 @@ class SessionManager:
         session_dir: str = "",
         restart_event: asyncio.Event | None = None,
         agent_pool: AgentPool | None = None,
+        channel_factory: "Callable[[str], ChannelAdapter] | None" = None,
+        hitl_mode: str = "feishu",
     ) -> None:
         if not session_dir:
             session_dir = str(get_session_dir())
-        self._bot = bot
+        self._frontend = frontend
         self._mcp_manager = mcp_manager
         self._llm_config = llm_config
         self._harness_config = harness_config
@@ -63,6 +69,8 @@ class SessionManager:
         self._session_dir = session_dir
         self._restart_event = restart_event
         self._agent_pool = agent_pool
+        self._channel_factory = channel_factory
+        self._hitl_mode = hitl_mode
         self._sessions: dict[str, SwarmSession] = {}
         self._chat_modes: dict[str, str] = {}  # chat_id -> "swarm" | "single"
 
@@ -87,18 +95,18 @@ class SessionManager:
         # Check for mode switch commands
         if _MODE_NORMAL_PATTERN.match(stripped):
             self._chat_modes[chat_id] = "single"
-            await self._bot.send_text(chat_id, "已切换到普通模式 (单 Agent)")
+            await self._frontend.send_text(chat_id, "已切换到普通模式 (单 Agent)")
             return
         if _MODE_EXPERT_PATTERN.match(stripped):
             self._chat_modes[chat_id] = "swarm"
-            await self._bot.send_text(chat_id, "已切换到专家模式 (多 Agent 协作)")
+            await self._frontend.send_text(chat_id, "已切换到专家模式 (多 Agent 协作)")
             return
 
         # Check for restart command: "harness restart"
         if _RESTART_PATTERN.match(stripped):
             self.terminate_all()
-            if self._bot:
-                await self._bot.send_text(chat_id, "🔄 服务正在重启...")
+            if self._frontend:
+                await self._frontend.send_text(chat_id, "🔄 服务正在重启...")
             if self._restart_event:
                 self._restart_event.set()
             return
@@ -111,7 +119,7 @@ class SessionManager:
                 del self._sessions[chat_id]
                 logger.info("Session terminated: chat_id=%s", chat_id)
             else:
-                await self._bot.send_text(chat_id, "当前没有进行中的任务")
+                await self._frontend.send_text(chat_id, "当前没有进行中的任务")
             return
 
         # Check for resume command: "harness resume <session_id>"
@@ -137,7 +145,7 @@ class SessionManager:
                 and session.owner_open_id
                 and open_id != session.owner_open_id
             ):
-                await self._bot.send_text(
+                await self._frontend.send_text(
                     chat_id,
                     "只有任务发起者可以回复，请联系发起者或发送'终止'结束任务。",
                 )
@@ -147,11 +155,11 @@ class SessionManager:
                 injected = await asyncio.wait_for(session.inject_reply(stripped), timeout=10)
             except asyncio.TimeoutError:
                 logger.warning("inject_reply timed out: chat_id=%s", chat_id)
-                await self._bot.send_text(chat_id, "回复注入超时，请稍后重试。")
+                await self._frontend.send_text(chat_id, "回复注入超时，请稍后重试。")
                 return
             if not injected:
                 # No pending request — tell user
-                await self._bot.send_text(
+                await self._frontend.send_text(
                     chat_id,
                     "当前正在处理中，请等待 AI 代理提问后再回复。",
                 )
@@ -171,7 +179,7 @@ class SessionManager:
 
         session = SwarmSession(
             chat_id=chat_id,
-            bot=self._bot,
+            frontend=self._frontend,
             mcp_manager=self._mcp_manager,
             llm_config=self._llm_config,
             harness_config=self._harness_config,
@@ -179,6 +187,8 @@ class SessionManager:
             session_dir=self._session_dir,
             mode=mode,
             agent_pool=self._agent_pool,
+            channel_factory=self._channel_factory,
+            hitl_mode=self._hitl_mode,
         )
         session._on_complete = self._cleanup_session
         # Record session owner for group chat access control (swarm mode only)
@@ -188,13 +198,13 @@ class SessionManager:
         session.start(prompt)
 
         mode_label = "普通模式" if mode == "single" else "专家模式"
-        await self._bot.send_text(chat_id, f"🚀 任务已启动 ({mode_label}): {prompt[:100]}")
+        await self._frontend.send_text(chat_id, f"🚀 任务已启动 ({mode_label}): {prompt[:100]}")
 
     async def _resume_session(self, chat_id: str, session_id: str) -> None:
         """Load a saved session snapshot and resume it in a new SwarmSession."""
         snapshot_path = find_snapshot_path(self._session_dir, session_id)
         if snapshot_path is None:
-            await self._bot.send_text(chat_id, f"未找到会话ID: {session_id}")
+            await self._frontend.send_text(chat_id, f"未找到会话ID: {session_id}")
             return
 
         try:
@@ -202,7 +212,7 @@ class SessionManager:
                 snapshot_data = json.load(f)
         except (json.JSONDecodeError, OSError) as e:
             logger.error("Failed to load session snapshot %s: %s", session_id, e)
-            await self._bot.send_text(chat_id, "会话数据损坏，无法恢复")
+            await self._frontend.send_text(chat_id, "会话数据损坏，无法恢复")
             return
 
         saved_messages = snapshot_data.get("messages", [])
@@ -210,7 +220,7 @@ class SessionManager:
         original_status = snapshot_data.get("status", "unknown")
 
         if not saved_messages:
-            await self._bot.send_text(chat_id, "会话无消息记录，无法恢复")
+            await self._frontend.send_text(chat_id, "会话无消息记录，无法恢复")
             return
 
         # Clean up any existing session for this chat_id
@@ -222,20 +232,22 @@ class SessionManager:
         # Create new session and start in resume mode (no owner check for resume)
         session = SwarmSession(
             chat_id=chat_id,
-            bot=self._bot,
+            frontend=self._frontend,
             mcp_manager=self._mcp_manager,
             llm_config=self._llm_config,
             harness_config=self._harness_config,
             skill_registry=self._skill_registry,
             session_dir=self._session_dir,
             agent_pool=self._agent_pool,
+            channel_factory=self._channel_factory,
+            hitl_mode=self._hitl_mode,
         )
         session._on_complete = self._cleanup_session
         self._sessions[chat_id] = session
         session.start_resume(saved_messages, original_prompt)
 
         msg_count = len(saved_messages)
-        await self._bot.send_text(
+        await self._frontend.send_text(
             chat_id,
             f"🔄 会话已恢复 (ID: {session_id}, 之前状态: {original_status})\n"
             f"已加载 {msg_count} 条消息，继续执行...",
@@ -249,7 +261,7 @@ class SessionManager:
         """List all available session snapshots."""
         session_dir = Path(self._session_dir)
         if not session_dir.exists():
-            await self._bot.send_text(chat_id, "暂无保存的会话")
+            await self._frontend.send_text(chat_id, "暂无保存的会话")
             return
 
         snapshots = []
@@ -267,7 +279,7 @@ class SessionManager:
                 continue
 
         if not snapshots:
-            await self._bot.send_text(chat_id, "暂无保存的会话")
+            await self._frontend.send_text(chat_id, "暂无保存的会话")
             return
 
         header = f"📋 找到 {len(snapshots)} 个会话:\n\n"
@@ -275,7 +287,7 @@ class SessionManager:
         body = "\n".join(snapshots[:10])
         if len(snapshots) > 10:
             body += f"\n\n... 还有 {len(snapshots) - 10} 个会话"
-        await self._bot.send_text(chat_id, header + body)
+        await self._frontend.send_text(chat_id, header + body)
 
     def terminate_all(self) -> None:
         """Terminate all active sessions (for graceful shutdown)."""

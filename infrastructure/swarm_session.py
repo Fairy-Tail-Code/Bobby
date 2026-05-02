@@ -31,9 +31,9 @@ from agents.factory import (
     _register_context_transforms,
 )
 from agents.channel_proxy import ChannelUserProxyAgent, ROLE_DESCRIPTIONS
-from infrastructure.channel.channel_feishu_service import ChannelFeishuService
+from infrastructure.channel.channel import ChannelAdapter
 from config.config import HarnessConfig, LlmConfig
-from infrastructure.feishu_bot import FeishuBotService
+from infrastructure.frontend import Frontend
 from infrastructure.mcp.manager import McpManager
 from infrastructure.session_snapshots import build_snapshot_path
 from infrastructure.skills.registry import SkillRegistry
@@ -67,22 +67,24 @@ class SessionSnapshot:
 
 
 class SwarmSession:
-    """A single swarm session bound to a Feishu chat.
+    """A single swarm session bound to a chat.
 
     Args:
-        chat_id:       Feishu chat ID.
-        bot:           Shared FeishuBotService.
-        mcp_manager:   Shared McpManager.
-        llm_config:    LLM configuration.
-        harness_config: Harness configuration.
-        skill_registry: Skill registry.
-        session_dir:    Directory for saving chat history.
+        chat_id:         Chat ID.
+        frontend:        Shared Frontend (e.g. FeishuBotService).
+        mcp_manager:     Shared McpManager.
+        llm_config:      LLM configuration.
+        harness_config:  Harness configuration.
+        skill_registry:  Skill registry.
+        session_dir:     Directory for saving chat history.
+        channel_factory: Callable that creates a ChannelAdapter for a chat_id.
+        hitl_mode:       HITL mode string passed to setup_handoffs.
     """
 
     def __init__(
         self,
         chat_id: str,
-        bot: FeishuBotService,
+        frontend: Frontend,
         mcp_manager: McpManager,
         llm_config: LlmConfig,
         harness_config: HarnessConfig,
@@ -90,12 +92,14 @@ class SwarmSession:
         session_dir: str = "",
         mode: str | None = None,
         agent_pool: AgentPool | None = None,
+        channel_factory: Callable[[str], ChannelAdapter] | None = None,
+        hitl_mode: str = "feishu",
     ) -> None:
         if not session_dir:
             from infrastructure.paths import get_session_dir
             session_dir = str(get_session_dir())
         self.chat_id = chat_id
-        self._bot = bot
+        self._frontend = frontend
         self._mcp_manager = mcp_manager
         self._llm_config = llm_config
         self._harness_config = harness_config
@@ -103,8 +107,9 @@ class SwarmSession:
         self._session_dir = session_dir
         self._mode = mode or harness_config.mode
         self._agent_pool = agent_pool
+        self._hitl_mode = hitl_mode
         self._task: asyncio.Task | None = None
-        self._channel = ChannelFeishuService(bot, chat_id)
+        self._channel = channel_factory(chat_id) if channel_factory else None
         self._agents: dict[str, ConversableAgent] = {}
         self._channel_proxies: dict[str, ChannelUserProxyAgent] = {}
         self._terminated = False
@@ -201,7 +206,7 @@ class SwarmSession:
                 status="completed",
             )
 
-            await self._bot.send_text(
+            await self._frontend.send_text(
                 self.chat_id,
                 f"✅ 任务完成！最后发言: {last_speaker.name}\n"
                 f"📋 会话ID（可用于恢复）: {session_id}",
@@ -218,14 +223,14 @@ class SwarmSession:
                 session_id=session_id,
                 status="terminated",
             )
-            await self._bot.send_text(
+            await self._frontend.send_text(
                 self.chat_id,
                 f"⚠️ 任务已终止\n"
                 f"📋 会话ID（可用于恢复）: {session_id}",
             )
         except Exception:
             logger.exception("SwarmSession error: chat_id=%s", self.chat_id)
-            await self._bot.send_text(self.chat_id, "❌ 任务执行出错，请查看日志")
+            await self._frontend.send_text(self.chat_id, "❌ 任务执行出错，请查看日志")
         finally:
             self._terminated = True
             if self._on_complete:
@@ -337,7 +342,7 @@ class SwarmSession:
         if not self._agent_pool and self._harness_config.context.enabled:
             _register_context_transforms(agents["assistant"], self._harness_config.context)
 
-        setup_single_handoffs(agents, "feishu")
+        setup_single_handoffs(agents, self._hitl_mode)
         return agents
 
     def _create_swarm_agents(self) -> dict[str, ConversableAgent]:
@@ -378,7 +383,7 @@ class SwarmSession:
             for key in ("pm", "planner", "generator", "evaluator"):
                 _register_context_transforms(agents[key], self._harness_config.context)
 
-        setup_handoffs(agents, "feishu")
+        setup_handoffs(agents, self._hitl_mode)
         return agents
 
     # ------------------------------------------------- message interception
@@ -456,14 +461,14 @@ class SwarmSession:
                 # Skip AG2 internal handoff tools
                 if fn_name.startswith("transfer_to_") or fn_name == "terminate_command":
                     continue
-                await self._bot.send_text(
+                await self._frontend.send_text(
                     self.chat_id,
                     f"🔧 **{name}** 正在执行工具: `{fn_name}`",
                 )
             return
 
         # Regular LLM text output — only from AI agents
-        await self._bot.send_text(
+        await self._frontend.send_text(
             self.chat_id,
             f"【{name}】\n{stripped}",
         )

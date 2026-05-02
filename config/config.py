@@ -71,10 +71,10 @@ class ContextConfig:
     """Configuration for the context compression pipeline."""
     enabled: bool = True
     # Level 1 — Snip Compact
-    max_messages: int = 60
+    max_messages: int = 40
     keep_first_message: bool = True
     # Level 4 — Auto Compact
-    max_tokens: int = 80_000
+    max_tokens: int = 60_000
     auto_compact_enabled: bool = True
 
 
@@ -225,7 +225,7 @@ def load_mcp_config() -> McpConfig:
     servers = []
     for name, cfg in mcp_servers.items():
         servers.append(McpServerConfig(name=name, **cfg))
-    return McpConfig(servers=servers, base_config=base_config)
+    return McpConfig(servers=servers, base_config=McpBaseConfig(**base_config))
 
 
 def load_harness_config() -> HarnessConfig:
@@ -235,9 +235,9 @@ def load_harness_config() -> HarnessConfig:
     ctx_raw = raw.get("context", {})
     context = ContextConfig(
         enabled=ctx_raw.get("enabled", True),
-        max_messages=ctx_raw.get("max_messages", 60),
+        max_messages=ctx_raw.get("max_messages", 40),
         keep_first_message=ctx_raw.get("keep_first_message", True),
-        max_tokens=ctx_raw.get("max_tokens", 80_000),
+        max_tokens=ctx_raw.get("max_tokens", 60_000),
         auto_compact_enabled=ctx_raw.get("auto_compact_enabled", True),
     )
     hitl_raw = raw.get("hitl", {})

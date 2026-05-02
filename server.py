@@ -14,6 +14,7 @@ from config.config import (
     load_feishu_config,
 )
 from infrastructure.feishu_bot import FeishuBotService
+from infrastructure.channel.channel_feishu_service import ChannelFeishuService
 from infrastructure.mcp.manager import McpManager
 from infrastructure.agent_pool import AgentPool
 from infrastructure.paths import (
@@ -84,7 +85,7 @@ async def main() -> None:
 
         # 5. Create SessionManager (bot set later)
         session_manager = SessionManager(
-            bot=None,
+            frontend=None,
             mcp_manager=mcp_manager,
             llm_config=llm_config,
             harness_config=harness_config,
@@ -100,7 +101,9 @@ async def main() -> None:
             app_secret=feishu_config.app_secret,
             on_message=session_manager.handle_message,
         )
-        session_manager._bot = bot
+        session_manager._frontend = bot
+        session_manager._channel_factory = lambda chat_id: ChannelFeishuService(bot, chat_id)
+        session_manager._hitl_mode = "feishu"
         bot.set_main_loop(asyncio.get_running_loop())
         bot.start()
 

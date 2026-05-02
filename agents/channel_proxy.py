@@ -6,17 +6,14 @@ back.
 """
 from __future__ import annotations
 
-import asyncio
 import logging
 import re
-import time
 import uuid
 
 from autogen import UserProxyAgent
 from autogen.io.base import AsyncInputStream
 
 from infrastructure.channel.channel import ChannelAdapter
-from infrastructure.channel.channel_feishu_service import ChannelFeishuService
 
 logger = logging.getLogger(__name__)
 
@@ -86,21 +83,8 @@ class ChannelUserProxyAgent(UserProxyAgent):
             self._recipient, self.name, request_id,
         )
 
-        # Use Future-based wait for service mode, polling for legacy mode
-        if isinstance(self._channel, ChannelFeishuService):
-            return await self._channel.wait_reply(request_id, timeout=self._timeout)
-
-        # Legacy polling path (email, dingtalk, old feishu)
-        deadline = time.monotonic() + self._timeout
-        while time.monotonic() < deadline:
-            reply = await self._channel.poll_reply(request_id)
-            if reply is not None:
-                logger.info("Reply received from %s (%s)", self._recipient, self.name)
-                return reply
-            await asyncio.sleep(self._polling_interval)
-
-        logger.warning("Timeout waiting for reply from %s (%s)", self._recipient, self.name)
-        return "[TIMEOUT] 未在规定时间内收到回复，请agent自行判断继续执行。"
+        # Delegate to channel's wait_reply (push-based or polling fallback)
+        return await self._channel.wait_reply(request_id, timeout=self._timeout)
 
     # ------------------------------------------------------------------
     # Helpers (channel-agnostic)

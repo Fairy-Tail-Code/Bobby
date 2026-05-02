@@ -1,0 +1,68 @@
+2026-05-02 23:55:36,247 [__main__] INFO: Loading configs...
+2026-05-02 23:55:36,303 [__main__] INFO: Available skills: ['agent-browser-test-from-prd', 'api-tester', 'backend-analyst', 'backend-delivery', 'backend-reviewer', 'browser-tester', 'bug-fixer', 'claude-code', 'docker-operator', 'frontend-delivery', 'fullstack-analyst', 'fullstack-reviewer', 'git-operator', 'memory-manager', 'repo-surveyor', 'runtime-go-toolchain', 'runtime-node-toolchain', 'runtime-python-toolchain', 'test-writer', 'verification-gate']
+2026-05-02 23:55:36,305 [__main__] INFO: Connecting to MCP servers...
+2026-05-02 23:55:36,391 [__main__] ERROR: Failed to connect MCP server 'shell': [WinError 2] 系统找不到指定的文件。
+2026-05-02 23:55:36,445 [__main__] ERROR: Failed to connect MCP server 'git': [WinError 2] 系统找不到指定的文件。
+2026-05-02 23:55:36,491 [__main__] ERROR: Failed to connect MCP server 'browser': [WinError 2] 系统找不到指定的文件。
+2026-05-02 23:55:36,559 [__main__] ERROR: Failed to connect MCP server 'workspace': [WinError 2] 系统找不到指定的文件。
+2026-05-02 23:55:36,648 [__main__] ERROR: Failed to connect MCP server 'docker': [WinError 2] 系统找不到指定的文件。
+2026-05-02 23:55:36,696 [__main__] ERROR: Failed to connect MCP server 'database': [WinError 2] 系统找不到指定的文件。
+2026-05-02 23:55:36,793 [__main__] ERROR: Failed to connect MCP server 'http_api': [WinError 2] 系统找不到指定的文件。
+2026-05-02 23:55:36,845 [__main__] ERROR: Failed to connect MCP server 'docs_web': [WinError 2] 系统找不到指定的文件。
+2026-05-02 23:55:36,891 [__main__] ERROR: Failed to connect MCP server 'gitee': [WinError 2] 系统找不到指定的文件。
+2026-05-02 23:55:36,978 [__main__] ERROR: Failed to connect MCP server 'claude_code': [WinError 2] 系统找不到指定的文件。
+2026-05-02 23:55:36,979 [infrastructure.skills.registry] WARNING: Skill 'api-tester' needs MCP servers ['http_api'] but ['http_api'] not connected
+2026-05-02 23:55:36,981 [infrastructure.skills.registry] WARNING: Skill 'backend-analyst' needs MCP servers ['workspace'] but ['workspace'] not connected
+2026-05-02 23:55:36,981 [infrastructure.skills.registry] WARNING: Skill 'backend-delivery' needs MCP servers ['workspace', 'shell'] but ['workspace', 'shell'] not connected
+2026-05-02 23:55:36,982 [infrastructure.skills.registry] WARNING: Skill 'backend-reviewer' needs MCP servers ['workspace', 'shell'] but ['workspace', 'shell'] not connected
+2026-05-02 23:55:36,982 [infrastructure.skills.registry] WARNING: Skill 'browser-tester' needs MCP servers ['browser', 'shell'] but ['browser', 'shell'] not connected
+2026-05-02 23:55:36,982 [infrastructure.skills.registry] WARNING: Skill 'bug-fixer' needs MCP servers ['workspace', 'shell'] but ['workspace', 'shell'] not connected
+2026-05-02 23:55:36,983 [infrastructure.skills.registry] WARNING: Skill 'claude-code' needs MCP servers ['claude_code', 'workspace'] but ['claude_code', 'workspace'] not connected
+2026-05-02 23:55:36,983 [infrastructure.skills.registry] WARNING: Skill 'docker-operator' needs MCP servers ['docker'] but ['docker'] not connected
+2026-05-02 23:55:36,983 [infrastructure.skills.registry] WARNING: Skill 'frontend-delivery' needs MCP servers ['workspace', 'shell'] but ['workspace', 'shell'] not connected
+2026-05-02 23:55:36,984 [infrastructure.skills.registry] WARNING: Skill 'fullstack-analyst' needs MCP servers ['workspace'] but ['workspace'] not connected
+2026-05-02 23:55:36,984 [infrastructure.skills.registry] WARNING: Skill 'fullstack-reviewer' needs MCP servers ['workspace', 'shell'] but ['workspace', 'shell'] not connected
+2026-05-02 23:55:36,984 [infrastructure.skills.registry] WARNING: Skill 'git-operator' needs MCP servers ['git'] but ['git'] not connected
+2026-05-02 23:55:36,985 [infrastructure.skills.registry] WARNING: Skill 'repo-surveyor' needs MCP servers ['workspace', 'shell'] but ['workspace', 'shell'] not connected
+2026-05-02 23:55:36,985 [infrastructure.skills.registry] WARNING: Skill 'runtime-go-toolchain' needs MCP servers ['shell'] but ['shell'] not connected
+2026-05-02 23:55:36,986 [infrastructure.skills.registry] WARNING: Skill 'runtime-node-toolchain' needs MCP servers ['shell'] but ['shell'] not connected
+2026-05-02 23:55:36,986 [infrastructure.skills.registry] WARNING: Skill 'runtime-python-toolchain' needs MCP servers ['shell'] but ['shell'] not connected
+2026-05-02 23:55:36,987 [infrastructure.skills.registry] WARNING: Skill 'test-writer' needs MCP servers ['workspace', 'shell'] but ['workspace', 'shell'] not connected
+2026-05-02 23:55:36,987 [__main__] WARNING: Skill 'api-tester' needs MCP servers ['http_api'] but ['http_api'] not connected
+2026-05-02 23:55:36,988 [__main__] WARNING: Skill 'backend-analyst' needs MCP servers ['workspace'] but ['workspace'] not connected
+2026-05-02 23:55:36,988 [__main__] WARNING: Skill 'backend-delivery' needs MCP servers ['workspace', 'shell'] but ['workspace', 'shell'] not connected
+2026-05-02 23:55:36,989 [__main__] WARNING: Skill 'backend-reviewer' needs MCP servers ['workspace', 'shell'] but ['workspace', 'shell'] not connected
+2026-05-02 23:55:36,989 [__main__] WARNING: Skill 'browser-tester' needs MCP servers ['browser', 'shell'] but ['browser', 'shell'] not connected
+2026-05-02 23:55:36,990 [__main__] WARNING: Skill 'bug-fixer' needs MCP servers ['workspace', 'shell'] but ['workspace', 'shell'] not connected
+2026-05-02 23:55:36,990 [__main__] WARNING: Skill 'claude-code' needs MCP servers ['claude_code', 'workspace'] but ['claude_code', 'workspace'] not connected
+2026-05-02 23:55:36,991 [__main__] WARNING: Skill 'docker-operator' needs MCP servers ['docker'] but ['docker'] not connected
+2026-05-02 23:55:36,991 [__main__] WARNING: Skill 'frontend-delivery' needs MCP servers ['workspace', 'shell'] but ['workspace', 'shell'] not connected
+2026-05-02 23:55:36,992 [__main__] WARNING: Skill 'fullstack-analyst' needs MCP servers ['workspace'] but ['workspace'] not connected
+2026-05-02 23:55:36,992 [__main__] WARNING: Skill 'fullstack-reviewer' needs MCP servers ['workspace', 'shell'] but ['workspace', 'shell'] not connected
+2026-05-02 23:55:36,993 [__main__] WARNING: Skill 'git-operator' needs MCP servers ['git'] but ['git'] not connected
+2026-05-02 23:55:36,993 [__main__] WARNING: Skill 'repo-surveyor' needs MCP servers ['workspace', 'shell'] but ['workspace', 'shell'] not connected
+2026-05-02 23:55:36,993 [__main__] WARNING: Skill 'runtime-go-toolchain' needs MCP servers ['shell'] but ['shell'] not connected
+2026-05-02 23:55:36,994 [__main__] WARNING: Skill 'runtime-node-toolchain' needs MCP servers ['shell'] but ['shell'] not connected
+2026-05-02 23:55:36,994 [__main__] WARNING: Skill 'runtime-python-toolchain' needs MCP servers ['shell'] but ['shell'] not connected
+2026-05-02 23:55:36,995 [__main__] WARNING: Skill 'test-writer' needs MCP servers ['workspace', 'shell'] but ['workspace', 'shell'] not connected
+2026-05-02 23:55:36,995 [__main__] INFO: Initializing agent pool...
+2026-05-02 23:55:36,996 [infrastructure.agent_pool] INFO: Initializing agent pool — creating templates...
+2026-05-02 23:55:37,137 [infrastructure.mcp.tool_bridge] INFO: Registered MCP tools for agent 'PM' from servers: ['workspace', 'shell']
+2026-05-02 23:55:37,181 [infrastructure.mcp.tool_bridge] INFO: Registered MCP tools for agent 'Planner' from servers: ['workspace', 'shell', 'git', 'gitee']
+2026-05-02 23:55:37,274 [infrastructure.mcp.tool_bridge] INFO: Registered MCP tools for agent 'Generator' from servers: ['shell', 'git', 'workspace', 'browser', 'docker', 'database', 'claude_code']
+2026-05-02 23:55:37,343 [infrastructure.mcp.tool_bridge] INFO: Registered MCP tools for agent 'Evaluator' from servers: ['browser', 'shell', 'http_api', 'workspace']
+2026-05-02 23:55:37,392 [agents.factory] INFO: Registered 2 context transform(s) on agent 'PM'
+2026-05-02 23:55:37,393 [agents.factory] INFO: Registered 2 context transform(s) on agent 'Planner'
+2026-05-02 23:55:37,394 [agents.factory] INFO: Registered 2 context transform(s) on agent 'Generator'
+2026-05-02 23:55:37,394 [agents.factory] INFO: Registered 2 context transform(s) on agent 'Evaluator'
+2026-05-02 23:55:37,438 [infrastructure.mcp.tool_bridge] INFO: Registered MCP tools for agent 'Assistant' from servers: ['shell', 'git', 'gitee', 'workspace', 'browser', 'claude_code']
+2026-05-02 23:55:37,465 [agents.factory] INFO: Registered 2 context transform(s) on agent 'Assistant'
+2026-05-02 23:55:37,466 [infrastructure.agent_pool] INFO:   [swarm] template 'pm': 0 functions, 0 tool schemas
+2026-05-02 23:55:37,466 [infrastructure.agent_pool] INFO:   [swarm] template 'planner': 1 functions, 1 tool schemas
+2026-05-02 23:55:37,467 [infrastructure.agent_pool] INFO:   [swarm] template 'generator': 1 functions, 1 tool schemas
+2026-05-02 23:55:37,467 [infrastructure.agent_pool] INFO:   [swarm] template 'evaluator': 1 functions, 1 tool schemas
+2026-05-02 23:55:37,467 [infrastructure.agent_pool] INFO:   [single] template 'assistant': 1 functions, 1 tool schemas
+2026-05-02 23:55:37,468 [__main__] INFO: Agent pool ready — agents will be cloned from templates on demand
+2026-05-02 23:55:37,472 [infrastructure.feishu_bot] INFO: FeishuBotService WS client started
+2026-05-02 23:55:37,472 [__main__] INFO: AG2 OpenHarness Feishu Service started. Active MCP servers: []
+2026-05-02 23:55:37,972 [Lark] INFO: connected to wss://msg-frontier.feishu.cn/ws/v2?fpid=493&aid=552564&device_id=7635323702845918400&access_key=680467d00fcb1950a37c1207161ae987&service_id=33554678&ticket=0bb0b654-7dbe-4e02-9c54-90b1498bee49 [conn_id=7635323702845918400]

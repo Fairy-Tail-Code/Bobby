@@ -31,6 +31,24 @@ class ChannelAdapter(ABC):
         The caller handles the polling loop and timeout.
         """
 
+    async def wait_reply(self, request_id: str, timeout: float = 300) -> str:
+        """Block until a reply arrives for *request_id* or *timeout* elapses.
+
+        Channels that support push-based replies (e.g. Feishu service mode)
+        should override this. The default implementation falls back to polling
+        via :meth:`poll_reply`.
+        """
+        import asyncio
+        import time
+
+        deadline = time.monotonic() + timeout
+        while time.monotonic() < deadline:
+            reply = await self.poll_reply(request_id)
+            if reply is not None:
+                return reply
+            await asyncio.sleep(5)
+        return "[TIMEOUT] 未在规定时间内收到回复，请agent自行判断继续执行。"
+
     async def start(self) -> None:  # noqa: B027
         """Initialize long-lived resources (connections, streams).
 
