@@ -409,7 +409,15 @@ class SwarmSession:
             await asyncio.sleep(2 if had_new else 5)
 
     async def _push_message_to_feishu(self, msg: dict) -> None:
-        """Push a single message to Feishu if it's relevant."""
+        """Push a single message to Feishu if it's relevant.
+
+        Filter rules:
+          - Skip tool responses
+          - Skip messages from *_owner proxies (they are echoed by channel.send)
+          - Skip user-originated messages (user already sees their own input)
+          - Skip transfer/terminate/control messages
+          - Show tool calls as compact notifications
+        """
         content = msg.get("content", "")
         role = msg.get("role", "")
         name = msg.get("name", "")
@@ -423,6 +431,17 @@ class SwarmSession:
             return
         stripped = content.strip()
         if not stripped:
+            return
+
+        # Skip messages from channel proxy agents (assistant_owner, pm_owner, etc.)
+        # These are handled by ChannelUserProxyAgent.a_get_human_input → channel.send
+        # which formats and sends its own notification with the AI content.
+        if name.endswith("_owner"):
+            return
+
+        # Skip user-originated messages — the user already sees their own input
+        # in Feishu, no need to echo it back.
+        if role == "user" or name == "user":
             return
 
         # Skip transfer/terminate messages
@@ -443,7 +462,7 @@ class SwarmSession:
                 )
             return
 
-        # Regular LLM text output
+        # Regular LLM text output — only from AI agents
         await self._bot.send_text(
             self.chat_id,
             f"【{name}】\n{stripped}",
