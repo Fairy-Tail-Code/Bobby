@@ -194,7 +194,7 @@ class SwarmSession:
             last_speaker_name = ""
             session_id = SessionSnapshot.generate_id()
 
-            async for event_response in await a_run_group_chat_iter(
+            async for event_response in a_run_group_chat_iter(
                 pattern=pattern,
                 messages=messages_input,
                 max_rounds=self._harness_config.max_rounds,
