@@ -176,6 +176,14 @@ class FeishuBotService:
         content = json.dumps({"text": text})
         await self._send_message(chat_id, "text", content)
 
+    async def stream_token(self, chat_id: str, agent_name: str, token: str) -> None:
+        """Feishu doesn't support streaming — no-op."""
+        pass
+
+    async def on_tool_call(self, chat_id: str, agent_name: str, tool_name: str) -> None:
+        """Notify tool call via text message."""
+        await self.send_text(chat_id, f"🔧 **{agent_name}** 正在执行工具: `{tool_name}`")
+
     async def send_rich_text(self, chat_id: str, title: str, content_lines: list[str]) -> None:
         """Send a rich text (post) message with title and content."""
         lines = []

@@ -15,3 +15,14 @@ class Frontend(Protocol):
     async def send_text(self, chat_id: str, text: str) -> None:
         """Send a text message to a chat."""
         ...
+
+    async def stream_token(self, chat_id: str, agent_name: str, token: str) -> None:
+        """Stream a single token (for frontends that support streaming).
+
+        Default: no-op. Feishu doesn't need this.
+        """
+        ...
+
+    async def on_tool_call(self, chat_id: str, agent_name: str, tool_name: str) -> None:
+        """Notify that an agent is calling a tool."""
+        ...

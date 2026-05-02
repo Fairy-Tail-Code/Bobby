@@ -18,7 +18,11 @@ from typing import Callable
 
 from autogen import ConversableAgent
 from autogen.agentchat.group.patterns import DefaultPattern
-from autogen.agentchat.group.multi_agent_chat import a_initiate_group_chat
+from autogen.agentchat.group.multi_agent_chat import a_run_group_chat_iter
+from autogen.events.agent_events import (
+    TextEvent, ToolCallEvent, TerminationEvent,
+    RunCompletionEvent, ErrorEvent,
+)
 
 from agents.factory import (
     create_pm_agent,
@@ -113,7 +117,6 @@ class SwarmSession:
         self._agents: dict[str, ConversableAgent] = {}
         self._channel_proxies: dict[str, ChannelUserProxyAgent] = {}
         self._terminated = False
-        self._pushed_count: int = 0
         self._prompt: str = ""
         self._is_resume: bool = False
         self._resume_messages: list[dict] = []
@@ -143,10 +146,9 @@ class SwarmSession:
         logger.info("SwarmSession resumed: chat_id=%s", self.chat_id)
 
     async def _run(self) -> None:
-        """Build agents, start message monitor, and run swarm."""
+        """Build agents, iterate events from group chat, and push to frontend."""
         try:
             self._agents = self._create_agents()
-            monitor_task = self._start_message_monitor()
 
             if self._mode == "single":
                 agents_list = [self._agents["assistant"]]
@@ -171,13 +173,12 @@ class SwarmSession:
                 agents=agents_list,
             )
 
-            # Choose messages source: saved messages for resume, prompt for new
+            # Choose messages source
             if self._is_resume:
                 valid_names = {a.name for a in agents_list}
                 messages_input = self._preprocess_resume_messages(
                     self._resume_messages, valid_names,
                 )
-                # If all messages were filtered out, fall back to original prompt
                 if not messages_input:
                     logger.warning(
                         "All resume messages filtered out, falling back to prompt: chat_id=%s",
@@ -188,34 +189,63 @@ class SwarmSession:
             else:
                 messages_input = self._prompt
 
-            result, context, last_speaker = await a_initiate_group_chat(
+            # === Event-driven iteration ===
+            chat_history: list[dict] = []
+            last_speaker_name = ""
+            session_id = SessionSnapshot.generate_id()
+
+            async for event_response in await a_run_group_chat_iter(
                 pattern=pattern,
                 messages=messages_input,
                 max_rounds=self._harness_config.max_rounds,
-            )
+            ):
+                event = event_response.content
 
-            # Stop the message monitor and flush remaining messages
-            monitor_task.cancel()
-            await self._flush_remaining_messages(result.chat_history)
+                if isinstance(event, TextEvent):
+                    content = event.content
+                    sender = event.sender
+                    if content and isinstance(content, str):
+                        stripped = content.strip()
+                        if (
+                            stripped
+                            and not re.match(r"^(Transfer to|TERMINATE|APPROVED|REJECTED)", stripped, re.IGNORECASE)
+                            and not sender.endswith("_owner")
+                        ):
+                            await self._frontend.send_text(
+                                self.chat_id,
+                                f"【{sender}】\n{stripped}",
+                            )
 
-            # Save snapshot with generated session_id
-            session_id = SessionSnapshot.generate_id()
-            self._save_snapshot(
-                messages=result.chat_history,
-                session_id=session_id,
-                status="completed",
-            )
+                elif isinstance(event, ToolCallEvent):
+                    for tc in (event.tool_calls or []):
+                        fn_name = tc.get("function", {}).get("name", "unknown")
+                        if not fn_name.startswith("transfer_to_") and fn_name != "terminate_command":
+                            await self._frontend.on_tool_call(
+                                self.chat_id, event.sender, fn_name,
+                            )
 
-            await self._frontend.send_text(
-                self.chat_id,
-                f"✅ 任务完成！最后发言: {last_speaker.name}\n"
-                f"📋 会话ID（可用于恢复）: {session_id}",
-            )
+                elif isinstance(event, RunCompletionEvent):
+                    chat_history = event.history
+                    last_speaker_name = event.last_speaker
+                    self._save_snapshot(
+                        messages=chat_history,
+                        session_id=session_id,
+                        status="completed",
+                    )
+                    await self._frontend.send_text(
+                        self.chat_id,
+                        f"✅ 任务完成！最后发言: {last_speaker_name}\n"
+                        f"📋 会话ID（可用于恢复）: {session_id}",
+                    )
 
-            # === Knowledge collection and sync (fire-and-forget) ===
-            await self._collect_and_sync_knowledge(result.chat_history, session_id)
+                elif isinstance(event, ErrorEvent):
+                    logger.error("Group chat error: %s", event.error)
+
+            # Knowledge collection (fire-and-forget)
+            if chat_history:
+                await self._collect_and_sync_knowledge(chat_history, session_id)
+
         except asyncio.CancelledError:
-            # Extract messages from agents before they are cleaned up
             messages = self._extract_messages_from_agents()
             session_id = SessionSnapshot.generate_id()
             self._save_snapshot(
@@ -385,104 +415,6 @@ class SwarmSession:
 
         setup_handoffs(agents, self._hitl_mode)
         return agents
-
-    # ------------------------------------------------- message interception
-
-    def _start_message_monitor(self) -> asyncio.Task:
-        """Start a background task that monitors agent messages and pushes to Feishu."""
-        return asyncio.create_task(self._monitor_messages())
-
-    async def _monitor_messages(self) -> None:
-        """Poll the primary agent's message history and push new messages to Feishu.
-
-        In group chat, every agent receives a full copy of all messages,
-        so monitoring one agent is sufficient and avoids duplicates.
-        """
-        primary_key = "assistant" if self._mode == "single" else "pm"
-
-        while not self._terminated:
-            primary = self._agents.get(primary_key)
-            had_new = False
-            if primary:
-                for other_agent, msgs in primary.chat_messages.items():
-                    new_msgs = msgs[self._pushed_count:]
-                    if new_msgs:
-                        had_new = True
-                    for msg in new_msgs:
-                        await self._push_message_to_feishu(msg)
-                    self._pushed_count = len(msgs)
-            await asyncio.sleep(2 if had_new else 5)
-
-    async def _push_message_to_feishu(self, msg: dict) -> None:
-        """Push a single message to Feishu if it's relevant.
-
-        Filter rules:
-          - Skip tool responses
-          - Skip messages from *_owner proxies (they are echoed by channel.send)
-          - Skip user-originated messages (user already sees their own input)
-          - Skip transfer/terminate/control messages
-          - Show tool calls as compact notifications
-        """
-        content = msg.get("content", "")
-        role = msg.get("role", "")
-        name = msg.get("name", "")
-
-        # Skip tool responses (they have tool_call_id)
-        if role == "tool":
-            return
-
-        # Skip empty content
-        if not content or not isinstance(content, str):
-            return
-        stripped = content.strip()
-        if not stripped:
-            return
-
-        # Skip messages from channel proxy agents (assistant_owner, pm_owner, etc.)
-        # These are handled by ChannelUserProxyAgent.a_get_human_input → channel.send
-        # which formats and sends its own notification with the AI content.
-        if name.endswith("_owner"):
-            return
-
-        # Skip user-originated messages — the user already sees their own input
-        # in Feishu, no need to echo it back.
-        if role == "user" or name == "user":
-            return
-
-        # Skip transfer/terminate messages
-        if re.match(r"^(Transfer to|TERMINATE|APPROVED|REJECTED)", stripped, re.IGNORECASE):
-            return
-
-        # Check for tool calls — show tool name only
-        tool_calls = msg.get("tool_calls")
-        if tool_calls:
-            for tc in tool_calls:
-                fn_name = tc.get("function", {}).get("name", "unknown")
-                # Skip AG2 internal handoff tools
-                if fn_name.startswith("transfer_to_") or fn_name == "terminate_command":
-                    continue
-                await self._frontend.send_text(
-                    self.chat_id,
-                    f"🔧 **{name}** 正在执行工具: `{fn_name}`",
-                )
-            return
-
-        # Regular LLM text output — only from AI agents
-        await self._frontend.send_text(
-            self.chat_id,
-            f"【{name}】\n{stripped}",
-        )
-
-    async def _flush_remaining_messages(self, chat_history: list[dict]) -> None:
-        """Push messages from chat_history that the monitor missed.
-
-        Called after the swarm completes. Tracks which messages have already
-        been pushed to avoid duplicates.
-        """
-        new_msgs = chat_history[self._pushed_count:]
-        for msg in new_msgs:
-            await self._push_message_to_feishu(msg)
-        self._pushed_count = len(chat_history)
 
     # --------------------------------------------------- reply injection
 
