@@ -14,6 +14,7 @@ import secrets
 from dataclasses import dataclass, asdict
 from datetime import datetime
 from pathlib import Path
+from typing import Callable
 
 from autogen import ConversableAgent
 from autogen.agentchat.group.patterns import DefaultPattern
@@ -36,6 +37,7 @@ from infrastructure.feishu_bot import FeishuBotService
 from infrastructure.mcp.manager import McpManager
 from infrastructure.session_snapshots import build_snapshot_path
 from infrastructure.skills.registry import SkillRegistry
+from infrastructure.agent_pool import AgentPool
 
 
 logger = logging.getLogger(__name__)
@@ -87,6 +89,7 @@ class SwarmSession:
         skill_registry: SkillRegistry | None = None,
         session_dir: str = "",
         mode: str | None = None,
+        agent_pool: AgentPool | None = None,
     ) -> None:
         if not session_dir:
             from infrastructure.paths import get_session_dir
@@ -99,6 +102,7 @@ class SwarmSession:
         self._skill_registry = skill_registry
         self._session_dir = session_dir
         self._mode = mode or harness_config.mode
+        self._agent_pool = agent_pool
         self._task: asyncio.Task | None = None
         self._channel = ChannelFeishuService(bot, chat_id)
         self._agents: dict[str, ConversableAgent] = {}
@@ -109,6 +113,7 @@ class SwarmSession:
         self._is_resume: bool = False
         self._resume_messages: list[dict] = []
         self.owner_open_id: str | None = None  # Session creator, set by SessionManager
+        self._on_complete: Callable[[str], None] | None = None  # Cleanup callback
 
     @property
     def is_running(self) -> bool:
@@ -223,12 +228,27 @@ class SwarmSession:
             await self._bot.send_text(self.chat_id, "❌ 任务执行出错，请查看日志")
         finally:
             self._terminated = True
+            if self._on_complete:
+                try:
+                    self._on_complete(self.chat_id)
+                except Exception:
+                    logger.exception("on_complete callback failed: chat_id=%s", self.chat_id)
 
     def terminate(self) -> None:
         """Cancel the running swarm task."""
         if self._task and not self._task.done():
             self._task.cancel()
         self._terminated = True
+
+    async def dispose(self) -> None:
+        """Release all resources held by this session."""
+        try:
+            self._agents.clear()
+            self._channel_proxies.clear()
+            self._resume_messages.clear()
+            await self._channel.stop()
+        except Exception:
+            logger.exception("Error disposing session chat_id=%s", self.chat_id)
 
     async def _collect_and_sync_knowledge(
         self, chat_history: list[dict], session_id: str,
@@ -279,18 +299,22 @@ class SwarmSession:
     # ---------------------------------------------------- agent creation
 
     def _create_agents(self) -> dict[str, ConversableAgent]:
-        """Create all agents for this session."""
+        """Create all agents for this session — from pool if available."""
         if self._mode == "single":
             return self._create_single_agents()
         return self._create_swarm_agents()
 
     def _create_single_agents(self) -> dict[str, ConversableAgent]:
         """Create agents for single mode: one Assistant + one owner proxy."""
-        agents: dict[str, ConversableAgent] = {
-            "assistant": create_single_agent(
-                self._llm_config, self._mcp_manager, self._skill_registry,
-            ),
-        }
+        # Use pool if available, otherwise fall back to direct creation
+        if self._agent_pool:
+            agents = self._agent_pool.acquire_single_agents()
+        else:
+            agents: dict[str, ConversableAgent] = {
+                "assistant": create_single_agent(
+                    self._llm_config, self._mcp_manager, self._skill_registry,
+                ),
+            }
 
         # Single owner proxy for the assistant
         hitl_cfg = self._harness_config.hitl
@@ -308,7 +332,9 @@ class SwarmSession:
         agents["assistant_owner"] = proxy
         self._channel_proxies["assistant_owner"] = proxy
 
-        if self._harness_config.context.enabled:
+        # Context transforms: only needed when NOT using pool (pool templates
+        # already have transforms registered on them, and clones inherit hooks)
+        if not self._agent_pool and self._harness_config.context.enabled:
             _register_context_transforms(agents["assistant"], self._harness_config.context)
 
         setup_single_handoffs(agents, "feishu")
@@ -316,18 +342,22 @@ class SwarmSession:
 
     def _create_swarm_agents(self) -> dict[str, ConversableAgent]:
         """Create agents for swarm mode (PM, Planner, Generator, Evaluator)."""
-        agents: dict[str, ConversableAgent] = {
-            "pm": create_pm_agent(self._llm_config, self._mcp_manager),
-            "planner": create_planner_agent(
-                self._llm_config, self._mcp_manager, self._skill_registry,
-            ),
-            "generator": create_generator_agent(
-                self._llm_config, self._mcp_manager, self._skill_registry,
-            ),
-            "evaluator": create_evaluator_agent(
-                self._llm_config, self._mcp_manager, self._skill_registry,
-            ),
-        }
+        # Use pool if available, otherwise fall back to direct creation
+        if self._agent_pool:
+            agents = self._agent_pool.acquire_swarm_agents()
+        else:
+            agents: dict[str, ConversableAgent] = {
+                "pm": create_pm_agent(self._llm_config, self._mcp_manager),
+                "planner": create_planner_agent(
+                    self._llm_config, self._mcp_manager, self._skill_registry,
+                ),
+                "generator": create_generator_agent(
+                    self._llm_config, self._mcp_manager, self._skill_registry,
+                ),
+                "evaluator": create_evaluator_agent(
+                    self._llm_config, self._mcp_manager, self._skill_registry,
+                ),
+            }
 
         # Create per-role channel proxies using the shared channel
         hitl_cfg = self._harness_config.hitl
@@ -343,7 +373,8 @@ class SwarmSession:
             agents[role_key] = proxy
             self._channel_proxies[role_key] = proxy
 
-        if self._harness_config.context.enabled:
+        # Context transforms: only needed when NOT using pool
+        if not self._agent_pool and self._harness_config.context.enabled:
             for key in ("pm", "planner", "generator", "evaluator"):
                 _register_context_transforms(agents[key], self._harness_config.context)
 
@@ -366,13 +397,16 @@ class SwarmSession:
 
         while not self._terminated:
             primary = self._agents.get(primary_key)
+            had_new = False
             if primary:
                 for other_agent, msgs in primary.chat_messages.items():
                     new_msgs = msgs[self._pushed_count:]
+                    if new_msgs:
+                        had_new = True
                     for msg in new_msgs:
                         await self._push_message_to_feishu(msg)
                     self._pushed_count = len(msgs)
-            await asyncio.sleep(1)
+            await asyncio.sleep(2 if had_new else 5)
 
     async def _push_message_to_feishu(self, msg: dict) -> None:
         """Push a single message to Feishu if it's relevant."""

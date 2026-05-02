@@ -18,6 +18,7 @@ from infrastructure.paths import get_session_dir
 from infrastructure.session_snapshots import find_snapshot_path, iter_snapshot_paths
 from infrastructure.skills.registry import SkillRegistry
 from infrastructure.swarm_session import SwarmSession, _TERMINATE_KEYWORDS
+from infrastructure.agent_pool import AgentPool
 
 logger = logging.getLogger(__name__)
 
@@ -50,6 +51,7 @@ class SessionManager:
         skill_registry: SkillRegistry | None = None,
         session_dir: str = "",
         restart_event: asyncio.Event | None = None,
+        agent_pool: AgentPool | None = None,
     ) -> None:
         if not session_dir:
             session_dir = str(get_session_dir())
@@ -60,6 +62,7 @@ class SessionManager:
         self._skill_registry = skill_registry
         self._session_dir = session_dir
         self._restart_event = restart_event
+        self._agent_pool = agent_pool
         self._sessions: dict[str, SwarmSession] = {}
         self._chat_modes: dict[str, str] = {}  # chat_id -> "swarm" | "single"
 
@@ -140,7 +143,12 @@ class SessionManager:
                 )
                 return
             # Active session — inject user reply
-            injected = await session.inject_reply(stripped)
+            try:
+                injected = await asyncio.wait_for(session.inject_reply(stripped), timeout=10)
+            except asyncio.TimeoutError:
+                logger.warning("inject_reply timed out: chat_id=%s", chat_id)
+                await self._bot.send_text(chat_id, "回复注入超时，请稍后重试。")
+                return
             if not injected:
                 # No pending request — tell user
                 await self._bot.send_text(
@@ -170,7 +178,9 @@ class SessionManager:
             skill_registry=self._skill_registry,
             session_dir=self._session_dir,
             mode=mode,
+            agent_pool=self._agent_pool,
         )
+        session._on_complete = self._cleanup_session
         # Record session owner for group chat access control (swarm mode only)
         if mode != "single" and chat_type == "group" and open_id:
             session.owner_open_id = open_id
@@ -218,7 +228,9 @@ class SessionManager:
             harness_config=self._harness_config,
             skill_registry=self._skill_registry,
             session_dir=self._session_dir,
+            agent_pool=self._agent_pool,
         )
+        session._on_complete = self._cleanup_session
         self._sessions[chat_id] = session
         session.start_resume(saved_messages, original_prompt)
 
@@ -270,3 +282,18 @@ class SessionManager:
         for session in self._sessions.values():
             session.terminate()
         self._sessions.clear()
+
+    def _cleanup_session(self, chat_id: str) -> None:
+        """Remove a completed/terminated session from memory.
+
+        Called by SwarmSession via on_complete callback after _run() finishes.
+        Session data is already persisted to JSON, so the in-memory object
+        is no longer needed.
+        """
+        session = self._sessions.pop(chat_id, None)
+        if session and not session.is_running:
+            try:
+                asyncio.create_task(session.dispose())
+            except Exception:
+                logger.exception("Failed to dispose session chat_id=%s", chat_id)
+            logger.info("Cleaned up completed session: chat_id=%s", chat_id)

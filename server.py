@@ -15,6 +15,7 @@ from config.config import (
 )
 from infrastructure.feishu_bot import FeishuBotService
 from infrastructure.mcp.manager import McpManager
+from infrastructure.agent_pool import AgentPool
 from infrastructure.paths import (
     get_session_dir, get_system_skills_dir, get_user_skills_dir,
 )
@@ -67,6 +68,17 @@ async def main() -> None:
                 issue.skill_name, issue.missing_servers, issue.missing_servers,
             )
 
+        # 3.5. Initialize agent pool (pre-create agent templates with tools/skills)
+        logger.info("Initializing agent pool...")
+        agent_pool = AgentPool(
+            llm_config=llm_config,
+            mcp_manager=mcp_manager,
+            skill_registry=skill_registry,
+            harness_config=harness_config,
+        )
+        agent_pool.initialize()
+        logger.info("Agent pool ready — agents will be cloned from templates on demand")
+
         # 4. Get session dir from paths
         session_dir = str(get_session_dir())
 
@@ -79,6 +91,7 @@ async def main() -> None:
             skill_registry=skill_registry,
             session_dir=session_dir,
             restart_event=restart_event,
+            agent_pool=agent_pool,
         )
 
         # 6. Create and start FeishuBotService
