@@ -149,9 +149,8 @@ def create_evaluator_agent(
     return agent
 
 def creat_user_agent(
-    llm_config: LlmConfig,
 ):
-    agent = create_user(llm_config)
+    agent = create_user()
     return agent
 
 
@@ -424,7 +423,7 @@ def create_all_agents(
         logger.info("Created %d Feishu proxy agents", len(proxies))
 
     else:
-        agents["user"] = creat_user_agent(llm_config)
+        agents["user"] = creat_user_agent()
 
     # Register context compression transforms (Level 1 + Level 4)
     # Only for AI agents, not for email proxies
