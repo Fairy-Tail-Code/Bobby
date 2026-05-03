@@ -51,6 +51,167 @@ def run(prompt: tuple[str, ...]) -> None:
     asyncio.run(_run(" ".join(prompt)))
 
 
+# --- harness chat ---
+
+@cli.command()
+@click.argument("prompt", nargs=-1, required=False)
+@click.option("--mode", "-m", type=click.Choice(["single", "swarm"]), default=None, help="Force agent mode (single or swarm)")
+def chat(prompt: tuple[str, ...], mode: str | None) -> None:
+    """Interactive CLI chat with agents (like OpenAI Codex CLI).
+
+    \b
+      harness chat "Build a todo app"           # Start with prompt
+      harness chat                              # Interactive REPL mode
+      harness chat --mode single "quick task"   # Force single mode
+      harness chat --mode swarm "complex task"  # Force swarm mode
+    """
+    text = " ".join(prompt) if prompt else ""
+    asyncio.run(_chat_main(text, mode))
+
+
+async def _chat_main(prompt: str, mode: str | None) -> None:
+    import logging
+
+    from config.config import load_llm_config, load_mcp_config, load_harness_config
+    from infrastructure.frontend_cli import CLIFrontend, print_info, print_error, print_prompt as cli_print_prompt
+    from infrastructure.channel.channel_cli import CLIChannel
+    from infrastructure.mcp.manager import McpManager
+    from infrastructure.agent_pool import AgentPool
+    from infrastructure.paths import get_session_dir, get_system_skills_dir, get_user_skills_dir
+    from infrastructure.session_manager import SessionManager
+    from infrastructure.skills.registry import SkillRegistry
+
+    logging.basicConfig(
+        level=logging.INFO,
+        format="%(asctime)s [%(name)s] %(levelname)s: %(message)s",
+    )
+
+    # 1. Load configs
+    llm_config = load_llm_config()
+    mcp_config = load_mcp_config()
+    harness_config = load_harness_config()
+
+    # 2. Override mode if specified
+    if mode is not None:
+        harness_config.mode = mode
+
+    # 3. Initialize skill registry
+    skill_registry = SkillRegistry(roots=[get_system_skills_dir(), get_user_skills_dir()])
+
+    # 4. Connect MCP servers
+    mcp_manager = McpManager(mcp_config)
+    connected_servers: list[str] = []
+    for server_cfg in mcp_config.servers:
+        try:
+            await mcp_manager.connect(server_cfg)
+            connected_servers.append(server_cfg.name)
+        except Exception as e:
+            print_error(f"Failed to connect MCP server '{server_cfg.name}': {e}")
+
+    skill_registry.connected_servers = connected_servers
+    for issue in skill_registry.validate_alignment():
+        print_info(f"Skill '{issue.skill_name}' needs MCP servers {issue.missing_servers} but not connected")
+
+    # 5. Initialize agent pool
+    agent_pool = AgentPool(
+        llm_config=llm_config,
+        mcp_manager=mcp_manager,
+        skill_registry=skill_registry,
+        harness_config=harness_config,
+    )
+    agent_pool.initialize()
+
+    # 6. Create CLI frontend and channel
+    cli_frontend = CLIFrontend()
+
+    session_manager = SessionManager(
+        frontend=cli_frontend,
+        mcp_manager=mcp_manager,
+        llm_config=llm_config,
+        harness_config=harness_config,
+        skill_registry=skill_registry,
+        session_dir=str(get_session_dir()),
+        agent_pool=agent_pool,
+        channel_factory=lambda chat_id: CLIChannel(),
+        hitl_mode="cli",
+    )
+
+    mode_label = "single" if harness_config.mode == "single" else "swarm"
+    print_info(f"OpenHarness CLI ready (mode={mode_label}, MCP servers={connected_servers})")
+
+    # 7. Handle prompt mode vs REPL mode
+    chat_id = "cli"
+    open_id = "user"
+    chat_type = "p2p"
+
+    if prompt:
+        print_info(f"Task: {prompt[:100]}")
+        await session_manager.handle_message(chat_id, open_id, chat_type, prompt)
+        # Wait for session to complete
+        session = session_manager._sessions.get(chat_id)
+        if session and session.is_running:
+            try:
+                while session.is_running:
+                    await asyncio.sleep(0.5)
+            except KeyboardInterrupt:
+                session_manager.terminate_all()
+        await mcp_manager.disconnect_all()
+        print_info("Session complete.")
+        return
+
+    # REPL mode
+    print_info("Type your message and press Enter. Ctrl+C to exit.\n")
+    try:
+        while True:
+            try:
+                cli_print_prompt()
+                line = input()
+            except EOFError:
+                break
+
+            stripped = line.strip()
+            if not stripped:
+                continue
+
+            await session_manager.handle_message(chat_id, open_id, chat_type, stripped)
+
+            # If a session was created, watch for HITL requests from the channel
+            session = session_manager._sessions.get(chat_id)
+            if session and session.is_running:
+                await _repl_watch_session(session, chat_id, session_manager)
+    except KeyboardInterrupt:
+        pass
+    finally:
+        session_manager.terminate_all()
+        await mcp_manager.disconnect_all()
+        print_info("Goodbye!")
+
+
+async def _repl_watch_session(session, chat_id: str, session_manager) -> None:
+    """Watch a running session for HITL input requests.
+
+    When the CLIChannel has a pending request, prompt the user for input
+    and inject it.
+    """
+    while session.is_running:
+        channel = getattr(session, "_channel", None)
+        if channel is None:
+            await asyncio.sleep(0.3)
+            continue
+        pending_id = channel.get_any_pending_request_id()
+        if pending_id is not None:
+            try:
+                from infrastructure.frontend_cli import print_prompt as cli_print_prompt
+                cli_print_prompt()
+                reply = input()
+            except (EOFError, KeyboardInterrupt):
+                channel.inject_reply(pending_id, "[CANCELLED]")
+                break
+            channel.inject_reply(pending_id, reply)
+        else:
+            await asyncio.sleep(0.3)
+
+
 # --- harness server start/stop/restart ---
 
 @cli.group()

@@ -13,3 +13,6 @@ todo/
 Discarded_plan/
 own_knowledge/
 memory/
+
+# Runtime logs
+*.log
