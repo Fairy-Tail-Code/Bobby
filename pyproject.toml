@@ -2,7 +2,7 @@
 name = "ag2-openharness"
 version = "0.1.0"
 description = "Add your description here"
-readme = "docs/README.md"
+readme = "README.md"
 requires-python = ">=3.12"
 dependencies = [
     "ag2[openai]>=0.7.0",
