@@ -35,6 +35,7 @@ from agents.factory import (
     _register_context_transforms,
 )
 from agents.channel_proxy import ChannelUserProxyAgent, ROLE_DESCRIPTIONS
+from agents.user import create_user
 from infrastructure.channel.channel import ChannelAdapter
 from config.config import HarnessConfig, LlmConfig
 from infrastructure.frontend import Frontend
@@ -392,6 +393,8 @@ class SwarmSession:
                 "evaluator": create_evaluator_agent(
                     self._llm_config, self._mcp_manager, self._skill_registry,
                 ),
+                "user" : create_user(
+                )
             }
 
         # Create per-role channel proxies using the shared channel

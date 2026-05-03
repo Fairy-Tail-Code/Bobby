@@ -22,10 +22,6 @@ def create_user(llm_config: LlmConfig) -> ConversableAgent:
     return ConversableAgent(
         name="user",
         human_input_mode="ALWAYS",
-        code_execution_config={
-            "work_dir": r"C:\Users\WUJIEAI\PycharmProjects\OpenHarness\ag2_coding",
-            "use_docker": False,
-        },
     )
 
 
