@@ -36,7 +36,7 @@ harness info          # 查看安装信息
 
 ```powershell
 # Windows
-irm https://raw.githubusercontent.com/iamikunnnnn/Bobby/main/install/install.ps1 -OutFile install.ps1; .\install.ps1 -Upgrade
+irm https://raw.githubusercontent.com/iamikunnnnn/Bobby/main/install/install.ps1 -OutFile install.ps1; powershell -ExecutionPolicy Bypass -File .\install.ps1 -Upgrade
 ```
 
 ```bash
