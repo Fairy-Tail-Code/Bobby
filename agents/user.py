@@ -17,7 +17,7 @@ from config.config import (
 logger = logging.getLogger(__name__)
 
 
-def create_user(llm_config: LlmConfig) -> ConversableAgent:
+def create_user() -> ConversableAgent:
     """Create a stdin-based UserProxyAgent (legacy / fallback mode)."""
     return ConversableAgent(
         name="user",

@@ -394,7 +394,7 @@ class SwarmSession:
                     self._llm_config, self._mcp_manager, self._skill_registry,
                 ),
                 "user" : create_user(
-                )
+                ),
             }
 
         # Create per-role channel proxies using the shared channel
