@@ -35,7 +35,6 @@ from agents.factory import (
     _register_context_transforms,
 )
 from agents.channel_proxy import ChannelUserProxyAgent, ROLE_DESCRIPTIONS
-from agents.user import create_user
 from infrastructure.channel.channel import ChannelAdapter
 from config.config import HarnessConfig, LlmConfig
 from infrastructure.frontend import Frontend
@@ -153,9 +152,8 @@ class SwarmSession:
 
             if self._mode == "single":
                 agents_list = [self._agents["assistant"]]
-                for key in ("assistant_owner", "user"):
-                    if key in self._agents:
-                        agents_list.append(self._agents[key])
+                if "assistant_owner" in self._agents:
+                    agents_list.append(self._agents["assistant_owner"])
                 initial_agent = self._agents["assistant"]
             else:
                 agents_list = [
@@ -373,7 +371,7 @@ class SwarmSession:
         if not self._agent_pool and self._harness_config.context.enabled:
             _register_context_transforms(agents["assistant"], self._harness_config.context)
 
-        setup_single_handoffs(agents, self._hitl_mode)
+        setup_single_handoffs(agents)
         return agents
 
     def _create_swarm_agents(self) -> dict[str, ConversableAgent]:
@@ -392,8 +390,6 @@ class SwarmSession:
                 ),
                 "evaluator": create_evaluator_agent(
                     self._llm_config, self._mcp_manager, self._skill_registry,
-                ),
-                "user" : create_user(
                 ),
             }
 
@@ -416,7 +412,7 @@ class SwarmSession:
             for key in ("pm", "planner", "generator", "evaluator"):
                 _register_context_transforms(agents[key], self._harness_config.context)
 
-        setup_handoffs(agents, self._hitl_mode)
+        setup_handoffs(agents)
         return agents
 
     # --------------------------------------------------- reply injection

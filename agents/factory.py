@@ -13,8 +13,8 @@ from agents.generator import create_generator
 from agents.evaluator import create_evaluator
 from agents.PM import create_pm
 from agents.single import create_single
+from agents.channel_proxy import ROLE_DESCRIPTIONS
 from agents.user import (
-    create_user,
     create_email_channel_proxies,
     create_dingtalk_channel_proxies,
     create_feishu_channel_proxies,
@@ -34,9 +34,6 @@ from infrastructure.skills.skill_inject import inject_skill_summaries
 
 
 logger = logging.getLogger(__name__)
-
-# HITL modes that use per-role channel proxies (not stdin)
-_CHANNEL_MODES = {"email", "dingtalk", "feishu"}
 
 _skill_assignment: SkillAssignmentConfig | None = None
 
@@ -148,12 +145,6 @@ def create_evaluator_agent(
         register_load_skill_tool(agent, skill_registry, sa.skills.get("evaluator", []))
     return agent
 
-def creat_user_agent(
-):
-    agent = create_user()
-    return agent
-
-
 def create_single_agent(
     llm_config: LlmConfig,
     mcp_manager: McpManager,
@@ -169,20 +160,16 @@ def create_single_agent(
     return agent
 
 
-def setup_single_handoffs(agents: dict[str, ConversableAgent], hitl_mode: str = "stdin") -> None:
+def setup_single_handoffs(agents: dict[str, ConversableAgent]) -> None:
     """Set up handoffs for single-agent mode.
 
-    Conversational loop: Assistant <-> user (or assistant_owner in channel mode).
-    - Assistant.after_work → user (always loops back to user for next input)
-    - user.after_work → Assistant (user reply triggers assistant response)
+    Conversational loop: Assistant <-> assistant_owner.
+    - Assistant.after_work → assistant_owner (always loops back for next input)
+    - assistant_owner.after_work → Assistant (user reply triggers assistant response)
     - Termination via user sending "终止" or max_rounds
     """
     assistant = agents["assistant"]
-
-    if hitl_mode in _CHANNEL_MODES:
-        human_target = AgentTarget(agents["assistant_owner"])
-    else:
-        human_target = AgentTarget(agents["user"])
+    human_target = AgentTarget(agents["assistant_owner"])
 
     assistant.handoffs = Handoffs()
     assistant.handoffs.add_llm_conditions([
@@ -198,14 +185,9 @@ def setup_single_handoffs(agents: dict[str, ConversableAgent], hitl_mode: str = 
         ),
     ]).set_after_work(human_target)
 
-    # Human returns to Assistant after replying
-    if hitl_mode in _CHANNEL_MODES:
-        agents["assistant_owner"].handoffs = Handoffs()
-        agents["assistant_owner"].handoffs.set_after_work(AgentTarget(assistant))
-    else:
-        agents["user"].handoffs = Handoffs()
-        agents["user"].handoffs.set_after_work(AgentTarget(assistant))
-def setup_handoffs(agents: dict[str, ConversableAgent], hitl_mode: str = "stdin") -> None:
+    agents["assistant_owner"].handoffs = Handoffs()
+    agents["assistant_owner"].handoffs.set_after_work(AgentTarget(assistant))
+def setup_handoffs(agents: dict[str, ConversableAgent]) -> None:
     """Set up swarm handoff conditions between agents.
 
     PM -> Planner (PRD 完成)
@@ -218,26 +200,17 @@ def setup_handoffs(agents: dict[str, ConversableAgent], hitl_mode: str = "stdin"
     Evaluator -> Planner (需求不足)
     Evaluator -> TERMINATE (审核通过)
 
-    In email mode, each AI agent hands off to its dedicated role owner.
-    In stdin mode, all hand off to a single "user" proxy.
+    Each AI agent hands off to its dedicated role owner.
     """
     pm = agents["pm"]
     planner = agents["planner"]
     generator = agents["generator"]
     evaluator = agents["evaluator"]
 
-    # Determine per-role human targets
-    if hitl_mode in _CHANNEL_MODES:
-        pm_human = AgentTarget(agents["pm_owner"])
-        planner_human = AgentTarget(agents["planner_owner"])
-        generator_human = AgentTarget(agents["generator_owner"])
-        evaluator_human = AgentTarget(agents["evaluator_owner"])
-    else:
-        user = agents["user"]
-        pm_human = AgentTarget(user)
-        planner_human = AgentTarget(user)
-        generator_human = AgentTarget(user)
-        evaluator_human = AgentTarget(user)
+    pm_human = AgentTarget(agents["pm_owner"])
+    planner_human = AgentTarget(agents["planner_owner"])
+    generator_human = AgentTarget(agents["generator_owner"])
+    evaluator_human = AgentTarget(agents["evaluator_owner"])
 
     _TERMINATE_CONDITION = StringLLMCondition(
         "TERMINATE，当用户明确表示要取消、终止、不再继续任务时")
@@ -322,15 +295,11 @@ def setup_handoffs(agents: dict[str, ConversableAgent], hitl_mode: str = "stdin"
     ]).set_after_work(TerminateTarget())
 
     # Human proxies return to their corresponding AI agent after responding
-    if hitl_mode in _CHANNEL_MODES:
-        agents["pm_owner"].handoffs = Handoffs()
-        agents["pm_owner"].handoffs.set_after_work(AgentTarget(pm))
-        for owner_key in ("planner_owner", "generator_owner", "evaluator_owner"):
-            agents[owner_key].handoffs = Handoffs()
-            agents[owner_key].handoffs.set_after_work(AgentTarget(planner))
-    else:
-        agents["user"].handoffs = Handoffs()
-        agents["user"].handoffs.set_after_work(AgentTarget(pm))
+    agents["pm_owner"].handoffs = Handoffs()
+    agents["pm_owner"].handoffs.set_after_work(AgentTarget(pm))
+    for owner_key in ("planner_owner", "generator_owner", "evaluator_owner"):
+        agents[owner_key].handoffs = Handoffs()
+        agents[owner_key].handoffs.set_after_work(AgentTarget(planner))
 def create_all_agents(
     llm_config: LlmConfig,
     mcp_manager: McpManager,
@@ -382,12 +351,15 @@ def create_all_agents(
             )
             agents.update(proxies)
         else:
-            agents["user"] = creat_user_agent(llm_config)
+            agents["assistant_owner"] = ConversableAgent(
+                name="assistant_owner",
+                human_input_mode="ALWAYS",
+            )
 
         if harness_config and harness_config.context.enabled:
             _register_context_transforms(agents["assistant"], harness_config.context)
 
-        setup_single_handoffs(agents, hitl_mode)
+        setup_single_handoffs(agents)
         return agents
 
     # ---- Swarm mode (default) ----
@@ -423,14 +395,19 @@ def create_all_agents(
         logger.info("Created %d Feishu proxy agents", len(proxies))
 
     else:
-        agents["user"] = creat_user_agent()
+        for owner_key, description in ROLE_DESCRIPTIONS.items():
+            agents[owner_key] = ConversableAgent(
+                name=owner_key,
+                human_input_mode="ALWAYS",
+                system_message=description,
+            )
 
     # Register context compression transforms (Level 1 + Level 4)
-    # Only for AI agents, not for email proxies
+    # Only for AI agents, not for proxies
     _ai_agent_keys = {"pm", "planner", "generator", "evaluator"}
     if harness_config and harness_config.context.enabled:
         for key in _ai_agent_keys:
             _register_context_transforms(agents[key], harness_config.context)
 
-    setup_handoffs(agents, hitl_mode)
+    setup_handoffs(agents)
     return agents

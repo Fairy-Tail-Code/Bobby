@@ -114,9 +114,8 @@ async def run(prompt: str) -> None:
         # 构建智能体列表
         if harness_config.mode == "single":
             agents_list = [agents_dict["assistant"]]
-            for key in ("user", "assistant_owner"):
-                if key in agents_dict:
-                    agents_list.append(agents_dict[key])
+            if "assistant_owner" in agents_dict:
+                agents_list.append(agents_dict["assistant_owner"])
         else:
             agents_list = [
                 agents_dict["planner"],
@@ -124,7 +123,7 @@ async def run(prompt: str) -> None:
                 agents_dict["evaluator"],
                 agents_dict["pm"],
             ]
-            for key in ("user", "pm_owner", "planner_owner", "generator_owner", "evaluator_owner"):
+            for key in ("pm_owner", "planner_owner", "generator_owner", "evaluator_owner"):
                 if key in agents_dict:
                     agents_list.append(agents_dict[key])
 
