@@ -46,6 +46,13 @@ class LocalKnowledgeStore:
             await self._conn.close()
             self._conn = None
 
+    async def __aenter__(self) -> LocalKnowledgeStore:
+        await self.connect()
+        return self
+
+    async def __aexit__(self, *exc) -> None:
+        await self.close()
+
     @property
     def conn(self) -> aiosqlite.Connection:
         if self._conn is None:

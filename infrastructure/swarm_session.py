@@ -11,6 +11,7 @@ import json
 import logging
 import re
 import secrets
+import sys
 from dataclasses import dataclass, asdict
 from datetime import datetime
 from pathlib import Path
@@ -23,6 +24,7 @@ from autogen.events.agent_events import (
     TextEvent, ToolCallEvent, TerminationEvent,
     RunCompletionEvent, ErrorEvent,
 )
+from autogen.events.client_events import StreamEvent
 
 from agents.factory import (
     create_pm_agent,
@@ -38,6 +40,7 @@ from agents.channel_proxy import ChannelUserProxyAgent, ROLE_DESCRIPTIONS
 from infrastructure.channel.channel import ChannelAdapter
 from config.config import HarnessConfig, LlmConfig
 from infrastructure.frontend import Frontend
+from infrastructure.frontend_cli import CLIFrontend
 from infrastructure.mcp.manager import McpManager
 from infrastructure.session_snapshots import build_snapshot_path
 from infrastructure.skills.registry import SkillRegistry
@@ -192,6 +195,8 @@ class SwarmSession:
             chat_history: list[dict] = []
             last_speaker_name = ""
             session_id = SessionSnapshot.generate_id()
+            is_cli = isinstance(self._frontend, CLIFrontend)
+            streaming_active = False
 
             async for event_response in a_run_group_chat_iter(
                 pattern=pattern,
@@ -200,20 +205,48 @@ class SwarmSession:
             ):
                 event = event_response.content
 
+                # --- Streaming tokens (CLI only) ---
+                if isinstance(event, StreamEvent):
+                    if is_cli:
+                        if not streaming_active:
+                            sys.stdout.write("\n")
+                            streaming_active = True
+                        sys.stdout.write(event.content)
+                        sys.stdout.flush()
+                    continue
+
+                # Close streaming before processing other events
+                if streaming_active:
+                    streaming_active = False
+                    if is_cli:
+                        sys.stdout.write("\n")
+                        sys.stdout.flush()
+
                 if isinstance(event, TextEvent):
                     content = event.content
                     sender = event.sender
                     if content and isinstance(content, str):
                         stripped = content.strip()
-                        if (
-                            stripped
-                            and not re.match(r"^(Transfer to|TERMINATE|APPROVED|REJECTED)", stripped, re.IGNORECASE)
-                            and not sender.endswith("_owner")
-                        ):
-                            await self._frontend.send_text(
-                                self.chat_id,
-                                f"【{sender}】\n{stripped}",
-                            )
+                        if is_cli:
+                            # Content already streamed, show agent label
+                            if (
+                                stripped
+                                and not re.match(r"^(Transfer to|TERMINATE|APPROVED|REJECTED)", stripped, re.IGNORECASE)
+                                and not sender.endswith("_owner")
+                            ):
+                                sys.stdout.write(f"  【{sender}】\n")
+                                sys.stdout.flush()
+                        else:
+                            # Non-streaming: send full text to frontend
+                            if (
+                                stripped
+                                and not re.match(r"^(Transfer to|TERMINATE|APPROVED|REJECTED)", stripped, re.IGNORECASE)
+                                and not sender.endswith("_owner")
+                            ):
+                                await self._frontend.send_text(
+                                    self.chat_id,
+                                    f"【{sender}】\n{stripped}",
+                                )
 
                 elif isinstance(event, ToolCallEvent):
                     for tc in (event.tool_calls or []):
@@ -313,8 +346,7 @@ class SwarmSession:
                 return
 
             local_store = LocalKnowledgeStore(knowledge_config.local_store_path)
-            await local_store.connect()
-            try:
+            async with local_store:
                 enqueued = await local_store.enqueue(experiences)
                 logger.info("Enqueued %d experiences (chat_id=%s)", enqueued, self.chat_id)
 
@@ -325,8 +357,6 @@ class SwarmSession:
                         "Knowledge sync: pushed=%d, pulled=%d, errors=%d (chat_id=%s)",
                         result["pushed"], result["pulled"], result["errors"], self.chat_id,
                     )
-            finally:
-                await local_store.close()
         except Exception:
             logger.exception("Knowledge collection/sync failed (chat_id=%s)", self.chat_id)
 

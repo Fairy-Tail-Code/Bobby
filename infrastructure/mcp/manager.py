@@ -2,7 +2,7 @@ from __future__ import annotations
 
 import asyncio
 import logging
-from contextlib import AsyncExitStack
+from contextlib import asynccontextmanager, AsyncExitStack
 from dataclasses import dataclass
 from typing import Any
 
@@ -146,3 +146,18 @@ class McpManager:
         """Disconnect from all MCP servers."""
         for name in list(self._sessions.keys()):
             await self.disconnect(name)
+
+
+@asynccontextmanager
+async def create_mcp_manager(mcp_config: McpConfig):
+    """Context manager that creates an McpManager, connects all servers, and cleans up on exit."""
+    manager = McpManager(mcp_config)
+    for server_cfg in mcp_config.servers:
+        try:
+            await manager.connect(server_cfg)
+        except Exception as e:
+            logger.error("Failed to connect MCP server '%s': %s", server_cfg.name, e)
+    try:
+        yield manager
+    finally:
+        await manager.disconnect_all()

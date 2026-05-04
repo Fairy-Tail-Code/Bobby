@@ -16,7 +16,7 @@ from config.config import (
     load_feishu_config, load_role_feishu_open_ids,
     load_knowledge_config,
 )
-from infrastructure.mcp.manager import McpManager
+from infrastructure.mcp.manager import create_mcp_manager
 from infrastructure.paths import (
     get_config_dir, get_session_dir, get_system_skills_dir, get_user_skills_dir,
 )
@@ -54,26 +54,19 @@ async def run(prompt: str) -> None:
 
     # 连接所有配置的 MCP 服务器（用于工具调用/外部服务）
     logger.info("Connecting to MCP servers...")
-    mcp_manager = McpManager(mcp_config)
-    connected_servers: list[str] = []
-    for server_cfg in mcp_config.servers:
-        try:
-            await mcp_manager.connect(server_cfg)
-            connected_servers.append(server_cfg.name)
-        except Exception as e:
-            logger.error("Failed to connect to MCP server '%s': %s", server_cfg.name, e)
+    async with create_mcp_manager(mcp_config) as mcp_manager:
+        connected_servers = mcp_manager.list_servers()
 
-    # 校验技能与 MCP 服务的匹配性：技能需要的服务是否已连接
-    skill_registry.connected_servers = connected_servers
-    alignment_issues = skill_registry.validate_alignment()
-    if alignment_issues:
-        for issue in alignment_issues:
-            logger.warning(
-                "Skill '%s' needs MCP servers %s but %s not connected",
-                issue.skill_name, issue.missing_servers, issue.missing_servers,
-            )
+        # 校验技能与 MCP 服务的匹配性：技能需要的服务是否已连接
+        skill_registry.connected_servers = connected_servers
+        alignment_issues = skill_registry.validate_alignment()
+        if alignment_issues:
+            for issue in alignment_issues:
+                logger.warning(
+                    "Skill '%s' needs MCP servers %s but %s not connected",
+                    issue.skill_name, issue.missing_servers, issue.missing_servers,
+                )
 
-    try:
         # 根据HITL模式加载对应通道配置
         smtp_config = None
         imap_config = None
@@ -176,8 +169,7 @@ async def run(prompt: str) -> None:
 
                 if experiences:
                     local_store = LocalKnowledgeStore(knowledge_config.local_store_path)
-                    await local_store.connect()
-                    try:
+                    async with local_store:
                         enqueued = await local_store.enqueue(experiences)
                         logger.info("Enqueued %d experiences for sync", enqueued)
 
@@ -199,14 +191,8 @@ async def run(prompt: str) -> None:
                                     logger.info("Wrote %d shared experiences to local memory", written)
                         else:
                             logger.info("Knowledge server unreachable; %d experiences queued locally", enqueued)
-                    finally:
-                        await local_store.close()
             except Exception:
                 logger.exception("Knowledge collection/sync failed, continuing...")
-    finally:
-        # 无论是否异常，最终都断开 MCP 服务，释放资源
-        logger.info("Disconnecting MCP servers...")
-        await mcp_manager.disconnect_all()
 
 
 def main() -> None:

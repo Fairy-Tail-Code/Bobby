@@ -20,9 +20,10 @@ class LlmAgentConfig:
     base_url: str
     api_key: str
     temperature: float = 0.7
+    stream: bool = False
 
     def to_llm_config(self) -> dict[str, Any]:
-        return {
+        config: dict[str, Any] = {
             "config_list": [{
                 "model": self.model,
                 "base_url": self.base_url,
@@ -30,6 +31,9 @@ class LlmAgentConfig:
             }],
             "temperature": self.temperature,
         }
+        if self.stream:
+            config["config_list"][0]["stream"] = True
+        return config
 
 
 @dataclass

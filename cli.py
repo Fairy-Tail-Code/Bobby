@@ -12,9 +12,9 @@ import time
 from datetime import datetime
 from io import TextIOWrapper
 from pathlib import Path
-from typing import Sequence
+from typing import Annotated, Sequence
 
-import click
+import typer
 import yaml
 
 from infrastructure.paths import (
@@ -35,31 +35,57 @@ from infrastructure.paths import (
 )
 
 
-@click.group()
-@click.version_option(VERSION, prog_name="harness")
-def cli():
-    """OpenHarness — Multi-agent full-stack application generation harness."""
+def _version_callback(value: bool) -> None:
+    if value:
+        typer.echo(f"harness {VERSION}")
+        raise typer.Exit()
+
+
+app = typer.Typer(
+    name="harness",
+    help="OpenHarness — Multi-agent full-stack application generation harness.",
+    no_args_is_help=True,
+)
+
+
+@app.callback()
+def main(
+    version: Annotated[
+        bool | None,
+        typer.Option("--version", "-v", help="Show version.", callback=_version_callback, is_eager=True),
+    ] = None,
+) -> None:
+    pass
 
 
 # --- harness run <prompt> ---
 
-@cli.command()
-@click.argument("prompt", nargs=-1, required=True)
-def run(prompt: tuple[str, ...]) -> None:
+
+@app.command()
+def run(
+    prompt: Annotated[list[str], typer.Argument(help="Task description prompt.")] = [],
+) -> None:
     """Run a task with the given prompt (CLI mode)."""
+    if not prompt:
+        typer.echo("Error: PROMPT is required for 'run' command.", err=True)
+        raise typer.Exit(1)
     from main import run as _run
     asyncio.run(_run(" ".join(prompt)))
 
 
 # --- harness chat ---
 
-@cli.command()
-@click.argument("prompt", nargs=-1, required=False)
-@click.option("--mode", "-m", type=click.Choice(["single", "swarm"]), default=None, help="Force agent mode (single or swarm)")
-def chat(prompt: tuple[str, ...], mode: str | None) -> None:
+
+@app.command()
+def chat(
+    prompt: Annotated[list[str], typer.Argument(help="Optional initial prompt.")] = [],
+    mode: Annotated[
+        str | None,
+        typer.Option("--mode", "-m", help="Force agent mode (single or swarm)."),
+    ] = None,
+) -> None:
     """Interactive CLI chat with agents (like OpenAI Codex CLI).
 
-    \b
       harness chat "Build a todo app"           # Start with prompt
       harness chat                              # Interactive REPL mode
       harness chat --mode single "quick task"   # Force single mode
@@ -75,7 +101,7 @@ async def _chat_main(prompt: str, mode: str | None) -> None:
     from config.config import load_llm_config, load_mcp_config, load_harness_config
     from infrastructure.frontend_cli import CLIFrontend, print_info, print_error, print_prompt as cli_print_prompt
     from infrastructure.channel.channel_cli import CLIChannel
-    from infrastructure.mcp.manager import McpManager
+    from infrastructure.mcp.manager import create_mcp_manager
     from infrastructure.agent_pool import AgentPool
     from infrastructure.paths import get_session_dir, get_system_skills_dir, get_user_skills_dir
     from infrastructure.session_manager import SessionManager
@@ -91,6 +117,10 @@ async def _chat_main(prompt: str, mode: str | None) -> None:
     mcp_config = load_mcp_config()
     harness_config = load_harness_config()
 
+    # Enable token-by-token streaming for CLI mode
+    for cfg in (llm_config.pm, llm_config.planner, llm_config.generator, llm_config.evaluator):
+        cfg.stream = True
+
     # 2. Override mode if specified
     if mode is not None:
         harness_config.mode = mode
@@ -99,92 +129,84 @@ async def _chat_main(prompt: str, mode: str | None) -> None:
     skill_registry = SkillRegistry(roots=[get_system_skills_dir(), get_user_skills_dir()])
 
     # 4. Connect MCP servers
-    mcp_manager = McpManager(mcp_config)
-    connected_servers: list[str] = []
-    for server_cfg in mcp_config.servers:
-        try:
-            await mcp_manager.connect(server_cfg)
-            connected_servers.append(server_cfg.name)
-        except Exception as e:
-            print_error(f"Failed to connect MCP server '{server_cfg.name}': {e}")
+    async with create_mcp_manager(mcp_config) as mcp_manager:
+        connected_servers = mcp_manager.list_servers()
 
-    skill_registry.connected_servers = connected_servers
-    for issue in skill_registry.validate_alignment():
-        print_info(f"Skill '{issue.skill_name}' needs MCP servers {issue.missing_servers} but not connected")
+        skill_registry.connected_servers = connected_servers
+        for issue in skill_registry.validate_alignment():
+            print_info(f"Skill '{issue.skill_name}' needs MCP servers {issue.missing_servers} but not connected")
 
-    # 5. Initialize agent pool
-    agent_pool = AgentPool(
-        llm_config=llm_config,
-        mcp_manager=mcp_manager,
-        skill_registry=skill_registry,
-        harness_config=harness_config,
-    )
-    agent_pool.initialize()
+        # 5. Initialize agent pool
+        agent_pool = AgentPool(
+            llm_config=llm_config,
+            mcp_manager=mcp_manager,
+            skill_registry=skill_registry,
+            harness_config=harness_config,
+        )
+        agent_pool.initialize()
 
-    # 6. Create CLI frontend and channel
-    cli_frontend = CLIFrontend()
+        # 6. Create CLI frontend and channel
+        cli_frontend = CLIFrontend()
 
-    session_manager = SessionManager(
-        frontend=cli_frontend,
-        mcp_manager=mcp_manager,
-        llm_config=llm_config,
-        harness_config=harness_config,
-        skill_registry=skill_registry,
-        session_dir=str(get_session_dir()),
-        agent_pool=agent_pool,
-        channel_factory=lambda chat_id: CLIChannel(),
-        hitl_mode="cli",
-    )
+        session_manager = SessionManager(
+            frontend=cli_frontend,
+            mcp_manager=mcp_manager,
+            llm_config=llm_config,
+            harness_config=harness_config,
+            skill_registry=skill_registry,
+            session_dir=str(get_session_dir()),
+            agent_pool=agent_pool,
+            channel_factory=lambda chat_id: CLIChannel(),
+            hitl_mode="cli",
+        )
 
-    mode_label = "single" if harness_config.mode == "single" else "swarm"
-    print_info(f"OpenHarness CLI ready (mode={mode_label}, MCP servers={connected_servers})")
+        mode_label = "single" if harness_config.mode == "single" else "swarm"
+        print_info(f"OpenHarness CLI ready (mode={mode_label}, MCP servers={connected_servers})")
 
-    # 7. Handle prompt mode vs REPL mode
-    chat_id = "cli"
-    open_id = "user"
-    chat_type = "p2p"
+        # 7. Handle prompt mode vs REPL mode
+        chat_id = "cli"
+        open_id = "user"
+        chat_type = "p2p"
 
-    if prompt:
-        print_info(f"Task: {prompt[:100]}")
-        await session_manager.handle_message(chat_id, open_id, chat_type, prompt)
-        # Wait for session to complete
-        session = session_manager._sessions.get(chat_id)
-        if session and session.is_running:
-            try:
-                while session.is_running:
-                    await asyncio.sleep(0.5)
-            except KeyboardInterrupt:
-                session_manager.terminate_all()
-        await mcp_manager.disconnect_all()
-        print_info("Session complete.")
-        return
-
-    # REPL mode
-    print_info("Type your message and press Enter. Ctrl+C to exit.\n")
-    try:
-        while True:
-            try:
-                cli_print_prompt()
-                line = input()
-            except EOFError:
-                break
-
-            stripped = line.strip()
-            if not stripped:
-                continue
-
-            await session_manager.handle_message(chat_id, open_id, chat_type, stripped)
-
-            # If a session was created, watch for HITL requests from the channel
+        if prompt:
+            print_info(f"Task: {prompt[:100]}")
+            await session_manager.handle_message(chat_id, open_id, chat_type, prompt)
+            # Wait for session to complete
             session = session_manager._sessions.get(chat_id)
             if session and session.is_running:
-                await _repl_watch_session(session, chat_id, session_manager)
-    except KeyboardInterrupt:
-        pass
-    finally:
-        session_manager.terminate_all()
-        await mcp_manager.disconnect_all()
-        print_info("Goodbye!")
+                try:
+                    while session.is_running:
+                        await asyncio.sleep(0.5)
+                except KeyboardInterrupt:
+                    session_manager.terminate_all()
+            print_info("Session complete.")
+            return
+
+        # REPL mode
+        print_info("Type your message and press Enter. Ctrl+C to exit.\n")
+        try:
+            while True:
+                try:
+                    cli_print_prompt()
+                    line = input()
+                except EOFError:
+                    break
+
+                stripped = line.strip()
+                if not stripped:
+                    continue
+
+                await session_manager.handle_message(chat_id, open_id, chat_type, stripped)
+
+                # If a session was created, watch for HITL requests from the channel
+                session = session_manager._sessions.get(chat_id)
+                if session and session.is_running:
+                    await _repl_watch_session(session, chat_id, session_manager)
+        except KeyboardInterrupt:
+            pass
+        finally:
+            session_manager.terminate_all()
+            print_info("Goodbye!")
 
 
 async def _repl_watch_session(session, chat_id: str, session_manager) -> None:
@@ -214,18 +236,19 @@ async def _repl_watch_session(session, chat_id: str, session_manager) -> None:
 
 # --- harness server start/stop/restart ---
 
-@cli.group()
-def server():
-    """Manage the Feishu service."""
+server_app = typer.Typer(help="Manage the Feishu service.")
+app.add_typer(server_app, name="server")
 
 
-@server.command("start")
-@click.option("--background", "-d", is_flag=True, help="Run in background")
-@click.option("--foreground", "-f", is_flag=True, hidden=True, help="Run in foreground")
-def server_start(background: bool, foreground: bool) -> None:
+@server_app.command("start")
+def server_start(
+    background: Annotated[bool, typer.Option("--background", "-d", help="Run in background")] = False,
+    foreground: Annotated[bool, typer.Option("--foreground", "-f", hidden=True)] = False,
+) -> None:
     """Start the Feishu service."""
     if background and foreground:
-        raise click.UsageError("Choose either --background or --foreground, not both.")
+        typer.echo("Error: Choose either --background or --foreground, not both.", err=True)
+        raise typer.Exit(1)
     if background:
         _server_start_background()
         return
@@ -234,48 +257,59 @@ def server_start(background: bool, foreground: bool) -> None:
     except Exception as exc:
         from config.config import ConfigError
         if isinstance(exc, ConfigError):
-            raise click.ClickException(str(exc)) from exc
+            typer.echo(f"Error: {exc}", err=True)
+            raise typer.Exit(1) from exc
         raise
 
 
-@server.command("stop")
+@server_app.command("stop")
 def server_stop() -> None:
     """Stop the running Feishu service."""
     pid_path = get_server_pid_path()
     if not pid_path.exists():
-        click.echo("No running service found.")
+        typer.echo("No running service found.")
         return
     try:
         pid = int(pid_path.read_text().strip())
     except ValueError:
         pid_path.unlink(missing_ok=True)
-        click.echo("Service was not running (stale PID file removed).")
+        typer.echo("Service was not running (stale PID file removed).")
         return
     try:
         _terminate_background_process(pid)
         pid_path.unlink()
-        click.echo(f"Service stopped (PID {pid}).")
+        typer.echo(f"Service stopped (PID {pid}).")
     except (ProcessLookupError, FileNotFoundError, OSError, subprocess.CalledProcessError) as exc:
         if _is_stale_server_pid_error(exc):
             pid_path.unlink(missing_ok=True)
-            click.echo("Service was not running (stale PID file removed).")
+            typer.echo("Service was not running (stale PID file removed).")
             return
-        raise click.ClickException(f"Failed to stop service PID {pid}: {_format_subprocess_error(exc)}") from exc
+        typer.echo(f"Error: Failed to stop service PID {pid}: {_format_subprocess_error(exc)}", err=True)
+        raise typer.Exit(1) from exc
 
 
-@server.command("restart")
-@click.option("--background", "-d", is_flag=True, help="Run in background after restart")
-@click.option("--foreground", "-f", is_flag=True, hidden=True, help="Run in foreground after restart")
-def server_restart(background: bool, foreground: bool) -> None:
+@server_app.command("restart")
+def server_restart(
+    ctx: typer.Context,
+    background: Annotated[bool, typer.Option("--background", "-d", help="Run in background after restart")] = False,
+    foreground: Annotated[bool, typer.Option("--foreground", "-f", hidden=True)] = False,
+) -> None:
     """Restart the Feishu service."""
     if background and foreground:
-        raise click.UsageError("Choose either --background or --foreground, not both.")
-    ctx = click.get_current_context()
+        typer.echo("Error: Choose either --background or --foreground, not both.", err=True)
+        raise typer.Exit(1)
     ctx.invoke(server_stop)
     if background:
-        ctx.invoke(server_start, background=True, foreground=False)
+        _server_start_background()
     else:
-        ctx.invoke(server_start, background=False, foreground=True)
+        try:
+            asyncio.run(_server_main())
+        except Exception as exc:
+            from config.config import ConfigError
+            if isinstance(exc, ConfigError):
+                typer.echo(f"Error: {exc}", err=True)
+                raise typer.Exit(1) from exc
+            raise
 
 
 def _server_main():
@@ -350,7 +384,7 @@ def _server_start_background():
         try:
             pid = int(pid_path.read_text().strip())
             if _is_pid_running(pid):
-                click.echo(f"Service already running (PID {pid}). Use 'harness server stop' first.")
+                typer.echo(f"Service already running (PID {pid}). Use 'harness server stop' first.")
                 return
             pid_path.unlink()
         except (ValueError, FileNotFoundError):
@@ -374,30 +408,31 @@ def _server_start_background():
 
     time.sleep(1.0)
     if proc.poll() is not None:
-        raise click.ClickException(
-            f"Service failed to start in background (exit code {proc.returncode}). "
-            f"See {get_server_log_path()} for details."
+        typer.echo(
+            f"Error: Service failed to start in background (exit code {proc.returncode}). "
+            f"See {get_server_log_path()} for details.",
+            err=True,
         )
+        raise typer.Exit(1)
 
     pid_path.parent.mkdir(parents=True, exist_ok=True)
     pid_path.write_text(str(proc.pid))
-    click.echo(f"Service started in background (PID {proc.pid}). Logs: {get_server_log_path()}")
+    typer.echo(f"Service started in background (PID {proc.pid}). Logs: {get_server_log_path()}")
 
 
-@server.command("logs")
+@server_app.command("logs")
 def server_logs() -> None:
     """Print the current server log path."""
-    click.echo(get_server_log_path())
+    typer.echo(get_server_log_path())
 
 
 # --- harness knowledge sync/search/status ---
 
-@cli.group()
-def knowledge():
-    """Manage the knowledge base."""
+knowledge_app = typer.Typer(help="Manage the knowledge base.")
+app.add_typer(knowledge_app, name="knowledge")
 
 
-@knowledge.command("sync")
+@knowledge_app.command("sync")
 def knowledge_sync() -> None:
     """Sync knowledge with the server."""
     from config.config import load_knowledge_config
@@ -406,17 +441,21 @@ def knowledge_sync() -> None:
     asyncio.run(_knowledge_sync(config))
 
 
-@knowledge.command("search")
-@click.argument("query", nargs=-1, required=True)
-def knowledge_search(query: tuple[str, ...]) -> None:
+@knowledge_app.command("search")
+def knowledge_search(
+    query: Annotated[list[str], typer.Argument(help="Search query.")] = [],
+) -> None:
     """Search the knowledge base."""
+    if not query:
+        typer.echo("Error: QUERY is required.", err=True)
+        raise typer.Exit(1)
     from config.config import load_knowledge_config
     from main import _knowledge_search
     config = load_knowledge_config()
     asyncio.run(_knowledge_search(config, " ".join(query)))
 
 
-@knowledge.command("status")
+@knowledge_app.command("status")
 def knowledge_status() -> None:
     """Show knowledge base status."""
     from config.config import load_knowledge_config
@@ -440,62 +479,62 @@ _MCP_SERVERS = {
     "claude_code": "infrastructure.mcp_servers.claude_code_server",
 }
 
+_mcp_app = typer.Typer(help="Internal: run MCP servers.")
+app.add_typer(_mcp_app, name="_mcp", hidden=True)
 
-@cli.group(name="_mcp", hidden=True)
-def _mcp():
-    """Internal: run MCP servers."""
 
+def _make_mcp_command(mod: str):
+    def _mcp_cmd() -> None:
+        import importlib
+        m = importlib.import_module(mod)
+        m.main()
+    return _mcp_cmd
 
 for _name, _module in _MCP_SERVERS.items():
-    def _make_mcp_command(mod):
-        @click.command(name=mod.split(".")[-1].replace("_server", ""))
-        def _mcp_cmd():
-            import importlib
-            m = importlib.import_module(mod)
-            m.main()
-        return _mcp_cmd
-    _mcp.add_command(_make_mcp_command(_module))
+    _cmd_name = _module.split(".")[-1].replace("_server", "")
+    _mcp_app.command(name=_cmd_name)(_make_mcp_command(_module))
 
 
 # --- harness install ---
 
-@cli.command()
+
+@app.command()
 def install() -> None:
     """Initialize or repair ~/.openharness/ configuration."""
     home = get_home()
     defaults = get_defaults_dir()
 
     ensure_dirs()
-    click.echo(f"Created directory structure at {home}")
+    typer.echo(f"Created directory structure at {home}")
 
     config_dir = get_config_dir()
     for name in ["harness.yaml", "mcp.yaml", "skill.yaml"]:
         src = defaults / name
         dst = config_dir / name
         if dst.exists():
-            click.echo(f"  Skipped {name} (already exists)")
+            typer.echo(f"  Skipped {name} (already exists)")
         elif src.exists():
             dst.parent.mkdir(parents=True, exist_ok=True)
             dst.write_text(src.read_text(encoding="utf-8"), encoding="utf-8")
-            click.echo(f"  Installed {name}")
+            typer.echo(f"  Installed {name}")
         else:
-            click.echo(f"  Warning: template {name} not found at {src}")
+            typer.echo(f"  Warning: template {name} not found at {src}")
 
     env_example_dst = get_home() / ".env.example"
     env_dst = get_env_path()
     env_src = defaults / ".env.example"
     if not env_example_dst.exists() and env_src.exists():
         env_example_dst.write_text(env_src.read_text(encoding="utf-8"), encoding="utf-8")
-        click.echo("  Installed .env.example")
+        typer.echo("  Installed .env.example")
     if not env_dst.exists() and env_src.exists():
         env_dst.write_text(env_src.read_text(encoding="utf-8"), encoding="utf-8")
-        click.echo("  Installed .env (from .env.example)")
+        typer.echo("  Installed .env (from .env.example)")
 
     profile_dst = get_memory_dir() / "user_profile.md"
     profile_src = defaults / "user_profile.md"
     if not profile_dst.exists() and profile_src.exists():
         profile_dst.write_text(profile_src.read_text(encoding="utf-8"), encoding="utf-8")
-        click.echo("  Installed user_profile.md")
+        typer.echo("  Installed user_profile.md")
 
     marker_path = get_install_marker_path()
     if not marker_path.exists():
@@ -506,12 +545,12 @@ def install() -> None:
             "channel": "cli-install",
         }
         marker_path.write_text(json.dumps(marker, indent=2), encoding="utf-8")
-        click.echo("  Wrote install marker")
+        typer.echo("  Wrote install marker")
 
-    click.echo(f"\nInstallation complete!")
-    click.echo(f"  Home: {home}")
-    click.echo(f"  Config: {config_dir}")
-    click.echo(f"\nRun 'harness setup' to configure your API keys, or edit {get_env_path()} manually.")
+    typer.echo(f"\nInstallation complete!")
+    typer.echo(f"  Home: {home}")
+    typer.echo(f"  Config: {config_dir}")
+    typer.echo(f"\nRun 'harness setup' to configure your API keys, or edit {get_env_path()} manually.")
 
 
 # --- harness setup ---
@@ -620,7 +659,7 @@ def _write_env_values(env_path: Path, updates: dict[str, str]) -> None:
 
 def _confirm_choice(name: str, text: str, default: bool = True) -> bool:
     del name
-    return click.confirm(f"  {text}", default=default)
+    return typer.confirm(f"  {text}", default=default)
 
 
 def _prompt_value(
@@ -632,7 +671,7 @@ def _prompt_value(
 ) -> str:
     del name
     while True:
-        value = click.prompt(
+        value = typer.prompt(
             f"  {label}",
             default=default or "",
             show_default=bool(default) and not secret,
@@ -640,7 +679,7 @@ def _prompt_value(
         )
         if value or allow_empty:
             return value
-        click.echo("  This value is required.")
+        typer.echo("  This value is required.")
 
 
 def _render_menu(title: str, labels: Sequence[str], selected_index: int, description: str | None) -> int:
@@ -767,12 +806,12 @@ def _numeric_select_option(
     default: str | None = None,
     description: str | None = None,
 ) -> str:
-    click.echo(f"\n  {title}")
+    typer.echo(f"\n  {title}")
     if description:
         for line in description.splitlines():
-            click.echo(f"  {line}")
+            typer.echo(f"  {line}")
     for index, (_, label) in enumerate(options, start=1):
-        click.echo(f"    {index}) {label}")
+        typer.echo(f"    {index}) {label}")
 
     default_index = 1
     if default is not None:
@@ -781,7 +820,7 @@ def _numeric_select_option(
                 default_index = index
                 break
 
-    choice = click.prompt("  Enter choice", default=str(default_index), show_default=False)
+    choice = typer.prompt("  Enter choice", default=str(default_index), show_default=False)
     try:
         selected_index = int(choice) - 1
     except ValueError:
@@ -800,7 +839,8 @@ def _select_option(
 ) -> str:
     del name
     if not options:
-        raise click.ClickException("No selectable options were provided.")
+        typer.echo("Error: No selectable options were provided.", err=True)
+        raise typer.Exit(1)
 
     if sys.stdin.isatty() and sys.stdout.isatty():
         default_index = 0
@@ -977,7 +1017,7 @@ def _configure_feishu_hitl(existing_env: dict[str, str], updates: dict[str, str]
     return updates
 
 
-@cli.command()
+@app.command()
 def setup() -> None:
     """Interactive configuration wizard for .env and HITL settings."""
     _ensure_setup_files()
@@ -988,9 +1028,9 @@ def setup() -> None:
         if not _confirm_choice("reconfigure_env", ".env already has API keys. Reconfigure?", default=False):
             return
 
-    click.echo("")
-    click.echo("  ── Configuration Wizard ──")
-    click.echo("")
+    typer.echo("")
+    typer.echo("  ── Configuration Wizard ──")
+    typer.echo("")
 
     provider_key = _select_option(
         "llm_provider",
@@ -1018,7 +1058,7 @@ def setup() -> None:
         secret=True,
     )
     if not api_key:
-        click.echo("  No API key provided. You can edit .env later.")
+        typer.echo("  No API key provided. You can edit .env later.")
         return
 
     same_all = _confirm_choice(
@@ -1032,7 +1072,7 @@ def setup() -> None:
         if same_all:
             r_model, r_url, r_key = model, base_url, api_key
         else:
-            click.echo(f"\n  ── {prefix} Agent ──")
+            typer.echo(f"\n  ── {prefix} Agent ──")
             r_model = _prompt_value(f"{prefix}_MODEL", "Model", existing_env.get(f"{prefix}_MODEL", model))
             r_url = _prompt_value(f"{prefix}_BASE_URL", "Base URL", existing_env.get(f"{prefix}_BASE_URL", base_url))
             r_key = _prompt_value(
@@ -1104,46 +1144,47 @@ def setup() -> None:
         updates = _configure_feishu_hitl(existing_env, updates)
 
     _write_env_values(env_path, updates)
-    click.echo(f"\n  Configuration saved to {env_path}")
-    click.echo(f"  HITL mode saved to {get_config_dir() / 'harness.yaml'}")
+    typer.echo(f"\n  Configuration saved to {env_path}")
+    typer.echo(f"  HITL mode saved to {get_config_dir() / 'harness.yaml'}")
 
 
 # --- harness info ---
 
-@cli.command()
+
+@app.command()
 def info() -> None:
     """Show installation information."""
-    click.echo(f"OpenHarness v{VERSION}")
-    click.echo(f"  Home:          {get_home()}")
-    click.echo(f"  Config:        {get_config_dir()}")
-    click.echo(f"  Session:       {get_session_dir()}")
-    click.echo(f"  Memory:        {get_memory_dir()}")
-    click.echo(f"  System Skills: {get_system_skills_dir()}")
-    click.echo(f"  User Skills:   {get_user_skills_dir()}")
-    click.echo(f"  Workspace:     {get_workspace_dir()}")
-    click.echo(f"  .env:          {get_env_path()}")
+    typer.echo(f"OpenHarness v{VERSION}")
+    typer.echo(f"  Home:          {get_home()}")
+    typer.echo(f"  Config:        {get_config_dir()}")
+    typer.echo(f"  Session:       {get_session_dir()}")
+    typer.echo(f"  Memory:        {get_memory_dir()}")
+    typer.echo(f"  System Skills: {get_system_skills_dir()}")
+    typer.echo(f"  User Skills:   {get_user_skills_dir()}")
+    typer.echo(f"  Workspace:     {get_workspace_dir()}")
+    typer.echo(f"  .env:          {get_env_path()}")
 
     marker_path = get_install_marker_path()
     if marker_path.exists():
         marker = json.loads(marker_path.read_text(encoding="utf-8"))
-        click.echo(f"\n  Installed: {marker.get('installed_at', 'unknown')}")
-        click.echo(f"  Platform:  {marker.get('platform', 'unknown')}")
-        click.echo(f"  Channel:   {marker.get('channel', 'unknown')}")
+        typer.echo(f"\n  Installed: {marker.get('installed_at', 'unknown')}")
+        typer.echo(f"  Platform:  {marker.get('platform', 'unknown')}")
+        typer.echo(f"  Channel:   {marker.get('channel', 'unknown')}")
     else:
-        click.echo("\n  Not installed. Run 'harness install' first.")
+        typer.echo("\n  Not installed. Run 'harness install' first.")
 
     pid_path = get_server_pid_path()
     if pid_path.exists():
         try:
             pid = int(pid_path.read_text().strip())
             os.kill(pid, 0)
-            click.echo(f"\n  Server: running (PID {pid})")
+            typer.echo(f"\n  Server: running (PID {pid})")
         except (ProcessLookupError, FileNotFoundError):
             pid_path.unlink()
-            click.echo(f"\n  Server: stopped (stale PID removed)")
+            typer.echo(f"\n  Server: stopped (stale PID removed)")
     else:
-        click.echo(f"\n  Server: stopped")
+        typer.echo(f"\n  Server: stopped")
 
 
 if __name__ == "__main__":
-    cli()
+    app()
