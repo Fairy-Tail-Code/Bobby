@@ -110,11 +110,19 @@ class DingTalkConfig:
 class FeishuConfig:
     app_id: str = ""
     app_secret: str = ""
+    domain: str = "feishu"
+
+
+@dataclass
+class WeixinConfig:
+    account_id: str = ""
+    token: str = ""
+    base_url: str = "https://ilinkai.weixin.qq.com"
 
 
 @dataclass
 class HitlConfig:
-    mode: str = "stdin"  # "stdin" | "email" | "dingtalk" | "feishu"
+    mode: str = "stdin"  # "stdin" | "email" | "dingtalk" | "feishu" | "weixin"
     polling_interval: int = 30  # seconds between polls
     timeout: int = 3600  # max seconds to wait for a reply
     subject_prefix: str = "[OpenHarness]"
@@ -313,6 +321,16 @@ def load_feishu_config() -> FeishuConfig:
     return FeishuConfig(
         app_id=env.get("FEISHU_APP_ID", ""),
         app_secret=env.get("FEISHU_APP_SECRET", ""),
+        domain=env.get("FEISHU_DOMAIN", "feishu") or "feishu",
+    )
+
+
+def load_weixin_config() -> WeixinConfig:
+    env = _load_dotenv(get_env_path())
+    return WeixinConfig(
+        account_id=env.get("WEIXIN_ACCOUNT_ID", ""),
+        token=env.get("WEIXIN_TOKEN", ""),
+        base_url=env.get("WEIXIN_BASE_URL", "https://ilinkai.weixin.qq.com") or "https://ilinkai.weixin.qq.com",
     )
 
 

@@ -7,6 +7,7 @@ from __future__ import annotations
 import asyncio
 import json
 import logging
+import os
 import re
 import threading
 from typing import Callable, Awaitable
@@ -16,6 +17,7 @@ from lark_oapi.api.im.v1 import (
     CreateMessageRequest,
     CreateMessageRequestBody,
 )
+from lark_oapi.core.const import FEISHU_DOMAIN, LARK_DOMAIN
 
 logger = logging.getLogger(__name__)
 
@@ -35,9 +37,12 @@ class FeishuBotService:
         app_id: str,
         app_secret: str,
         on_message: Callable[[str, str, str, str], Awaitable[None]],
+        *,
+        domain: str = "feishu",
     ) -> None:
         self._app_id = app_id
         self._app_secret = app_secret
+        self._domain = domain if domain == "lark" else "feishu"
         self._on_message = on_message
         self._main_loop: asyncio.AbstractEventLoop | None = None
         self._lark_client: lark.Client | None = None
@@ -75,6 +80,7 @@ class FeishuBotService:
             lark.Client.builder()
             .app_id(self._app_id)
             .app_secret(self._app_secret)
+            .domain(LARK_DOMAIN if self._domain == "lark" else FEISHU_DOMAIN)
             .log_level(lark.LogLevel.INFO)
             .build()
         )
@@ -90,6 +96,7 @@ class FeishuBotService:
             self._app_secret,
             event_handler=handler,
             log_level=lark.LogLevel.INFO,
+            domain=LARK_DOMAIN if self._domain == "lark" else FEISHU_DOMAIN,
         )
 
         self._ws_thread = threading.Thread(

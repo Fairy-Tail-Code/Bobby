@@ -347,7 +347,8 @@ def _qr_register_inner(
     print()
     qr_url = begin["qr_url"]
     if _render_qr(qr_url):
-        print(f"\n  Scan the QR code above, or open this URL in Feishu / Lark:\n  {qr_url}\n")
+        print("  请直接使用飞书 / Lark 扫描上方二维码。")
+        print()
     else:
         print(f"  Open this URL in Feishu / Lark on your phone:\n\n  {qr_url}\n")
         print("  Tip: pip install qrcode to display a scannable QR code here next time")

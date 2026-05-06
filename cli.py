@@ -236,7 +236,7 @@ async def _repl_watch_session(session, chat_id: str, session_manager) -> None:
 
 # --- harness server start/stop/restart ---
 
-server_app = typer.Typer(help="Manage the Feishu service.")
+server_app = typer.Typer(help="Manage the messaging gateway service.")
 app_cli.add_typer(server_app, name="server")
 
 
@@ -245,7 +245,7 @@ def server_start(
     background: Annotated[bool, typer.Option("--background", "-d", help="Run in background")] = False,
     foreground: Annotated[bool, typer.Option("--foreground", "-f", hidden=True)] = False,
 ) -> None:
-    """Start the Feishu service."""
+    """Start the configured gateway service."""
     if background and foreground:
         typer.echo("Error: Choose either --background or --foreground, not both.", err=True)
         raise typer.Exit(1)
@@ -264,7 +264,7 @@ def server_start(
 
 @server_app.command("stop")
 def server_stop() -> None:
-    """Stop the running Feishu service."""
+    """Stop the running gateway service."""
     pid_path = get_server_pid_path()
     if not pid_path.exists():
         typer.echo("No running service found.")
@@ -294,7 +294,7 @@ def server_restart(
     background: Annotated[bool, typer.Option("--background", "-d", help="Run in background after restart")] = False,
     foreground: Annotated[bool, typer.Option("--foreground", "-f", hidden=True)] = False,
 ) -> None:
-    """Restart the Feishu service."""
+    """Restart the configured gateway service."""
     if background and foreground:
         typer.echo("Error: Choose either --background or --foreground, not both.", err=True)
         raise typer.Exit(1)
@@ -990,80 +990,76 @@ def _configure_dingtalk_hitl(existing_env: dict[str, str]) -> dict[str, str]:
     return updates
 
 
-def _configure_feishu_hitl(existing_env: dict[str, str], updates: dict[str, str]) -> dict[str, str]:
-    # Ask user for configuration method
-    method = _select_option(
-        "feishu_config_method",
-        "How would you like to configure Feishu?",
+def _configure_feishu_gateway(existing_env: dict[str, str], updates: dict[str, str]) -> dict[str, str]:
+    del existing_env
+    from gateway.feishu.feishu_onboard import qr_register
+
+    typer.echo("")
+    typer.echo("  ── Feishu / Lark Gateway Setup ──")
+    typer.echo("  将直接在终端输出二维码，扫码后自动创建机器人应用。")
+    typer.echo("")
+
+    domain = _select_option(
+        "feishu_domain",
+        "Select platform",
         [
-            ("scan", "Scan QR code to create app_cli (recommended)"),
-            ("manual", "Manually enter app_cli ID and Secret"),
+            ("feishu", "Feishu (China)"),
+            ("lark", "Lark (International)"),
         ],
-        default="scan",
+        default="feishu",
     )
 
-    if method == "scan":
-        # Use QR registration to create app_cli automatically
-        from gateway.feishu.feishu_onboard import qr_register
-
+    qr_result = qr_register(initial_domain=domain, timeout_seconds=600)
+    if not qr_result:
         typer.echo("")
-        typer.echo("  ── Feishu QR Registration ──")
+        typer.echo("  Feishu / Lark QR registration failed or timed out.", err=True)
+        raise typer.Exit(1)
+
+    updates["FEISHU_APP_ID"] = qr_result["app_id"]
+    updates["FEISHU_APP_SECRET"] = qr_result["app_secret"]
+    updates["FEISHU_DOMAIN"] = qr_result.get("domain", domain)
+
+    typer.echo("")
+    typer.echo("  Feishu / Lark gateway created successfully.")
+    typer.echo(f"  App ID:   {qr_result['app_id']}")
+    typer.echo(f"  Domain:   {updates['FEISHU_DOMAIN']}")
+    if qr_result.get("bot_name"):
+        typer.echo(f"  Bot name: {qr_result['bot_name']}")
+    typer.echo("")
+    typer.echo("  后续启动网关请运行: harness server start")
+    typer.echo("")
+    return updates
+
+
+def _configure_weixin_gateway(existing_env: dict[str, str], updates: dict[str, str]) -> dict[str, str]:
+    del existing_env
+    from gateway.weixin.weixin_onboard import qr_login
+
+    typer.echo("")
+    typer.echo("  ── Weixin Gateway Setup ──")
+    typer.echo("  将直接在终端输出二维码，扫码后自动登录腾讯 iLink 官方插件。")
+    typer.echo("")
+
+    qr_result = asyncio.run(qr_login(timeout_seconds=480))
+    if not qr_result:
         typer.echo("")
+        typer.echo("  Weixin QR login failed or timed out.", err=True)
+        raise typer.Exit(1)
 
-        domain = _select_option(
-            "feishu_domain",
-            "Select platform",
-            [
-                ("feishu", "Feishu (China)"),
-                ("lark", "Lark (International)"),
-            ],
-            default="feishu",
-        )
+    updates["WEIXIN_ACCOUNT_ID"] = qr_result["account_id"]
+    updates["WEIXIN_TOKEN"] = qr_result["token"]
+    updates["WEIXIN_BASE_URL"] = qr_result.get("base_url", "https://ilinkai.weixin.qq.com")
+    if qr_result.get("user_id"):
+        updates["WEIXIN_HOME_CHANNEL"] = qr_result["user_id"]
 
-        qr_result = qr_register(initial_domain=domain, timeout_seconds=600)
-        if qr_result:
-            updates["FEISHU_APP_ID"] = qr_result["app_id"]
-            updates["FEISHU_APP_SECRET"] = qr_result["app_secret"]
-            typer.echo("")
-            typer.echo(f"  app_cli created successfully!")
-            typer.echo(f"  app_cli ID:     {qr_result['app_id']}")
-            typer.echo(f"  Domain:       {qr_result['domain']}")
-            if qr_result.get("bot_name"):
-                typer.echo(f"  Bot name:    {qr_result['bot_name']}")
-            typer.echo("")
-        else:
-            typer.echo("")
-            typer.echo("  QR registration failed or timed out.", err=True)
-            typer.echo("  Please try again or use manual configuration.", err=True)
-            # Fall through to manual mode
-            method = "manual"
-
-    if method == "manual":
-        # Manual entry of credentials
-        if not updates.get("FEISHU_APP_ID"):
-            updates["FEISHU_APP_ID"] = _prompt_value(
-                "FEISHU_APP_ID",
-                "Feishu app_cli id",
-                existing_env.get("FEISHU_APP_ID", ""),
-            )
-        if not updates.get("FEISHU_APP_SECRET"):
-            updates["FEISHU_APP_SECRET"] = _prompt_value(
-                "FEISHU_APP_SECRET",
-                "Feishu app_cli secret",
-                existing_env.get("FEISHU_APP_SECRET", ""),
-                secret=True,
-            )
-
-    updates.update(
-        _prompt_role_values(
-            "same_hitl_feishu_open_id",
-            "shared_hitl_feishu_open_id",
-            "Feishu open id",
-            "HITL_{prefix}_FEISHU_OPEN_ID",
-            "Use the same Feishu open id for all roles?",
-            existing_env,
-        )
-    )
+    typer.echo("")
+    typer.echo("  Weixin gateway connected successfully.")
+    typer.echo(f"  Account ID: {qr_result['account_id']}")
+    if qr_result.get("user_id"):
+        typer.echo(f"  User ID:    {qr_result['user_id']}")
+    typer.echo("")
+    typer.echo("  后续启动网关请运行: harness server start")
+    typer.echo("")
     return updates
 
 
@@ -1155,34 +1151,18 @@ def setup() -> None:
             allow_empty=True,
         )
 
-    if _confirm_choice(
-        "configure_feishu_service",
-        "Configure Feishu service credentials for 'harness server' now?",
-        default=bool(existing_env.get("FEISHU_APP_ID") or existing_env.get("FEISHU_APP_SECRET")),
-    ):
-        updates["FEISHU_APP_ID"] = _prompt_value(
-            "FEISHU_APP_ID",
-            "Feishu app_cli id",
-            existing_env.get("FEISHU_APP_ID", ""),
-        )
-        updates["FEISHU_APP_SECRET"] = _prompt_value(
-            "FEISHU_APP_SECRET",
-            "Feishu app_cli secret",
-            existing_env.get("FEISHU_APP_SECRET", ""),
-            secret=True,
-        )
-
     hitl_mode = _select_option(
         "hitl_mode",
-        "Select the human review channel",
+        "Select the gateway / human review channel",
         [
             ("stdin", "stdin (local terminal only)"),
             ("email", "email"),
             ("dingtalk", "dingtalk"),
-            ("feishu", "feishu"),
+            ("feishu", "feishu / lark gateway"),
+            ("weixin", "weixin gateway"),
         ],
         default=_get_hitl_mode(),
-        description="This also updates config/harness.yaml so the runtime matches the generated .env.",
+        description="This updates config/harness.yaml and drives which gateway 'harness server start' will launch.",
     )
     _save_hitl_mode(hitl_mode)
 
@@ -1191,7 +1171,9 @@ def setup() -> None:
     elif hitl_mode == "dingtalk":
         updates.update(_configure_dingtalk_hitl(existing_env))
     elif hitl_mode == "feishu":
-        updates = _configure_feishu_hitl(existing_env, updates)
+        updates = _configure_feishu_gateway(existing_env, updates)
+    elif hitl_mode == "weixin":
+        updates = _configure_weixin_gateway(existing_env, updates)
 
     _write_env_values(env_path, updates)
     typer.echo(f"\n  Configuration saved to {env_path}")

@@ -1,4 +1,4 @@
-"""AG2 OpenHarness Feishu Service — FastAPI entry point.
+"""AG2 OpenHarness gateway service entry point.
 
 Usage:
     python server.py
@@ -12,9 +12,13 @@ import signal
 from config.config import (
     load_llm_config, load_mcp_config, load_harness_config,
     load_feishu_config,
+    load_weixin_config,
+    ConfigError,
 )
 from gateway.feishu.feishu_bot import FeishuBotService
 from gateway.feishu.channel_feishu_service import ChannelFeishuService
+from gateway.weixin.weixin_bot import WeixinBotService
+from gateway.weixin.channel_weixin_service import ChannelWeixinService
 from infrastructure.mcp.manager import create_mcp_manager
 from infrastructure.agent_pool import AgentPool
 from utils.paths import (
@@ -30,6 +34,43 @@ logging.basicConfig(
 logger = logging.getLogger(__name__)
 
 
+def _build_gateway(
+    *,
+    mode: str,
+    session_manager: SessionManager,
+) -> tuple[str, object, object]:
+    if mode == "feishu":
+        feishu_config = load_feishu_config()
+        if not feishu_config.app_id or not feishu_config.app_secret:
+            raise ConfigError("缺少 FEISHU_APP_ID / FEISHU_APP_SECRET，请重新运行 'harness setup' 完成飞书扫码配置。")
+        bot = FeishuBotService(
+            app_id=feishu_config.app_id,
+            app_secret=feishu_config.app_secret,
+            domain=feishu_config.domain,
+            on_message=session_manager.handle_message,
+        )
+        channel_factory = lambda chat_id: ChannelFeishuService(bot, chat_id)
+        return "Feishu", bot, channel_factory
+
+    if mode == "weixin":
+        weixin_config = load_weixin_config()
+        if not weixin_config.account_id or not weixin_config.token:
+            raise ConfigError("缺少 WEIXIN_ACCOUNT_ID / WEIXIN_TOKEN，请重新运行 'harness setup' 完成微信扫码配置。")
+        bot = WeixinBotService(
+            account_id=weixin_config.account_id,
+            token=weixin_config.token,
+            base_url=weixin_config.base_url,
+            on_message=session_manager.handle_message,
+        )
+        channel_factory = lambda chat_id: ChannelWeixinService(bot, chat_id)
+        return "Weixin", bot, channel_factory
+
+    raise ConfigError(
+        "harness server 仅支持 feishu 或 weixin 网关。"
+        f" 当前 harness.hitl.mode={mode!r}，请先运行 'harness setup' 重新选择。"
+    )
+
+
 async def main() -> None:
     """Initialize all services and run forever. Supports in-process restart via restart_event."""
     restart_event = asyncio.Event()
@@ -42,8 +83,6 @@ async def main() -> None:
         llm_config = load_llm_config()
         mcp_config = load_mcp_config()
         harness_config = load_harness_config()
-        feishu_config = load_feishu_config()
-
         # 2. Initialize skill registry
         system_skills_dir = get_system_skills_dir()
         user_skills_dir = get_user_skills_dir()
@@ -89,21 +128,20 @@ async def main() -> None:
                 agent_pool=agent_pool,
             )
 
-            # 6. Create and start FeishuBotService
-            bot = FeishuBotService(
-                app_id=feishu_config.app_id,
-                app_secret=feishu_config.app_secret,
-                on_message=session_manager.handle_message,
+            gateway_label, bot, channel_factory = _build_gateway(
+                mode=harness_config.hitl.mode,
+                session_manager=session_manager,
             )
             session_manager._frontend = bot
-            session_manager._channel_factory = lambda chat_id: ChannelFeishuService(bot, chat_id)
-            session_manager._hitl_mode = "feishu"
+            session_manager._channel_factory = channel_factory
+            session_manager._hitl_mode = harness_config.hitl.mode
             bot.set_main_loop(asyncio.get_running_loop())
             bot.start()
 
             logger.info(
-                "AG2 OpenHarness Feishu Service started. "
+                "AG2 OpenHarness %s Gateway started. "
                 "Active MCP servers: %s",
+                gateway_label,
                 connected_servers,
             )
 

@@ -13,6 +13,7 @@
 - [AG2_openharness开发经验.md](docs/project_experience/AG2_openharness开发经验.md) — 2026-04-17 飞书产品化服务：WS桥接、Future回复注入、消息监控、session管理
 - [AG2_openharness开发经验.md](docs/project_experience/AG2_openharness开发经验.md) — 2026-04-17 Session上下文持久化与恢复：SessionSnapshot、harness resume/list命令
 - [AG2_openharness开发经验.md](docs/project_experience/AG2_openharness开发经验.md) — 2026-04-20 群聊用户识别（owner_open_id）、Workspace文件操作加锁（FileLock）
+- [2026-05-06-gateway-setup-feishu-weixin.md](docs/project_experience/2026-05-06-gateway-setup-feishu-weixin.md) — setup 直出二维码、飞书 domain 对齐、微信 gateway 接入
 
 ## docs/AG2_knowledge/（AG2 框架知识库）
 
