@@ -2,7 +2,6 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 from pathlib import Path
-import os
 import re
 from typing import Any
 
@@ -10,7 +9,7 @@ from mcp.server.fastmcp import FastMCP
 from mcp.types import ToolAnnotations
 from filelock import FileLock
 
-from infrastructure.paths import get_default_runtime_cwd
+from utils.paths import get_default_runtime_cwd
 
 
 workspace_server = FastMCP("openharness-workspace", log_level="ERROR")

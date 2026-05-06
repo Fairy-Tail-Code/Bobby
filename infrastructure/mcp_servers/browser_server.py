@@ -9,7 +9,7 @@ from uuid import uuid4
 from mcp.server.fastmcp import FastMCP
 from mcp.types import ToolAnnotations
 
-from infrastructure.paths import get_default_runtime_cwd
+from utils.paths import get_default_runtime_cwd
 
 try:
     from playwright.async_api import Error as PlaywrightError

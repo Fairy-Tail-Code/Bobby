@@ -29,7 +29,7 @@ class LocalKnowledgeStore:
 
     def __init__(self, store_path: str | Path | None = None):
         if store_path is None:
-            from infrastructure.paths import get_home
+            from utils.paths import get_home
             store_path = get_home() / "knowledge_queue.db"
         self._path = Path(store_path)
         self._conn: aiosqlite.Connection | None = None

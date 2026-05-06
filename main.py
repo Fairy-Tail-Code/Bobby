@@ -17,7 +17,7 @@ from config.config import (
     load_knowledge_config,
 )
 from infrastructure.mcp.manager import create_mcp_manager
-from infrastructure.paths import (
+from utils.paths import (
     get_config_dir, get_session_dir, get_system_skills_dir, get_user_skills_dir,
 )
 from infrastructure.skills.registry import SkillRegistry

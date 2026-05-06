@@ -20,7 +20,7 @@ from typing import Any
 from mcp.server.fastmcp import FastMCP
 from mcp.types import ToolAnnotations
 
-from infrastructure.paths import get_default_runtime_cwd
+from utils.paths import get_default_runtime_cwd
 
 claude_code_server = FastMCP("openharness-claude-code", log_level="ERROR")
 

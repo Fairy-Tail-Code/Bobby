@@ -271,7 +271,7 @@ import logging
 import uuid
 
 from infrastructure.channel.channel import ChannelAdapter
-from gateway.feishu.feishu_bot import FeishuBotService
+from infrastructure.feishu_bot import FeishuBotService
 
 logger = logging.getLogger(__name__)
 
@@ -376,7 +376,7 @@ git commit -m "feat: add ChannelFeishuService with Future-based reply injection"
 在文件顶部添加 import：
 
 ```python
-from gateway.feishu.channel_feishu_service import ChannelFeishuService
+from infrastructure.channel.channel_feishu_service import ChannelFeishuService
 ```
 
 替换 `a_get_human_input` 方法（第 72-98 行）为：
@@ -464,11 +464,11 @@ from agents.factory import (
     _register_context_transforms,
 )
 from agents.channel_proxy import ChannelUserProxyAgent, ROLE_DESCRIPTIONS
-from gateway.feishu.channel_feishu_service import ChannelFeishuService
+from infrastructure.channel.channel_feishu_service import ChannelFeishuService
 from config.config import (
     HarnessConfig, LlmConfig, HitlConfig, FeishuConfig,
 )
-from gateway.feishu.feishu_bot import FeishuBotService
+from infrastructure.feishu_bot import FeishuBotService
 from infrastructure.mcp.manager import McpManager
 from infrastructure.skills.registry import SkillRegistry
 
@@ -735,10 +735,10 @@ import logging
 from config.config import (
     HarnessConfig, LlmConfig, FeishuConfig,
 )
-from gateway.feishu.feishu_bot import FeishuBotService
+from infrastructure.feishu_bot import FeishuBotService
 from infrastructure.mcp.manager import McpManager
 from infrastructure.skills.registry import SkillRegistry
-from infrastructure.session.swarm_session import SwarmSession, _TERMINATE_KEYWORDS
+from infrastructure.swarm_session import SwarmSession, _TERMINATE_KEYWORDS
 
 logger = logging.getLogger(__name__)
 
@@ -871,9 +871,9 @@ from config.config import (
     load_llm_config, load_mcp_config, load_harness_config,
     load_feishu_config,
 )
-from gateway.feishu.feishu_bot import FeishuBotService, set_main_loop
+from infrastructure.feishu_bot import FeishuBotService, set_main_loop
 from infrastructure.mcp.manager import McpManager
-from infrastructure.session.session_manager import SessionManager
+from infrastructure.session_manager import SessionManager
 from infrastructure.skills.registry import SkillRegistry
 
 logging.basicConfig(

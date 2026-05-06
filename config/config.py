@@ -1,13 +1,12 @@
 from __future__ import annotations
 
-import os
 from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Any
 
 import yaml
 
-from infrastructure.paths import get_home, get_config_dir, get_env_path
+from utils.paths import get_home, get_config_dir, get_env_path
 
 
 class ConfigError(ValueError):

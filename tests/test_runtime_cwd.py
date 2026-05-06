@@ -8,7 +8,7 @@ from pathlib import Path
 from infrastructure.mcp_servers.database_server import _resolve_root as resolve_database_root
 from infrastructure.mcp_servers.shell_server import _resolve_cwd as resolve_shell_cwd
 from infrastructure.mcp_servers.workspace_server import _resolve_root as resolve_workspace_root
-from infrastructure.paths import get_workspace_dir
+from utils.paths import get_workspace_dir
 
 
 @contextmanager

@@ -8,7 +8,7 @@ from typing import Any
 from mcp.server.fastmcp import FastMCP
 from mcp.types import ToolAnnotations
 
-from infrastructure.paths import get_default_runtime_cwd
+from utils.paths import get_default_runtime_cwd
 
 
 docker_server = FastMCP("openharness-docker", log_level="ERROR")

@@ -17,7 +17,7 @@ from gateway.feishu.feishu_bot import FeishuBotService
 from gateway.feishu.channel_feishu_service import ChannelFeishuService
 from infrastructure.mcp.manager import create_mcp_manager
 from infrastructure.agent_pool import AgentPool
-from infrastructure.paths import (
+from utils.paths import (
     get_session_dir, get_system_skills_dir, get_user_skills_dir,
 )
 from infrastructure.session.session_manager import SessionManager

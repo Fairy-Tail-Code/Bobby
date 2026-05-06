@@ -1,7 +1,5 @@
-from pathlib import Path
-
 from agents.prompts.loader import load_prompt
-from infrastructure.paths import ensure_agent_prompts, get_agent_prompts_dir
+from utils.paths import ensure_agent_prompts, get_agent_prompts_dir
 
 
 def test_load_prompt_exists():
@@ -30,7 +28,7 @@ def test_ensure_agent_prompts_copies_files(tmp_path, monkeypatch):
     src_dir.mkdir(parents=True)
     (src_dir / "test_agent.md").write_text("Hello test agent", encoding="utf-8")
 
-    import infrastructure.paths as paths
+    import utils.paths as paths
 
     monkeypatch.setattr(paths, "get_home", lambda: tmp_path)
     monkeypatch.setattr(paths, "_get_bundled_prompts_dir", lambda: src_dir)

@@ -375,7 +375,7 @@ config_path = CONFIG_DIR / "harness.yaml"
 session_dir = config_data.get("harness", {}).get("session", {}).get("session_dir", "session")
 
 # AFTER
-from infrastructure.paths import (
+from utils.paths import (
     get_home, get_config_dir, get_session_dir,
     get_system_skills_dir, get_user_skills_dir,
 )
@@ -409,7 +409,7 @@ harness_config = load_harness_config(CONFIG_DIR)
 skill_registry = SkillRegistry(roots=[SKILLS_DIR])
 
 # AFTER
-from infrastructure.paths import (
+from utils.paths import (
     get_config_dir, get_session_dir, get_system_skills_dir, get_user_skills_dir,
 )
 
@@ -458,7 +458,7 @@ SKILLS_DIR = Path(__file__).parent.parent / "skills"
 config_dir = Path(__file__).parent.parent / "config"
 
 # AFTER
-from infrastructure.paths import get_user_skills_dir, get_config_dir, get_system_skills_dir
+from utils.paths import get_user_skills_dir, get_config_dir, get_system_skills_dir
 
 # Remove SKILLS_DIR entirely.
 
@@ -480,7 +480,8 @@ Since `SKILLS_DIR` is imported by `main.py` (line 19: `from agents.factory impor
 session_dir: str = "session",
 
 # AFTER
-from infrastructure.paths import get_session_dir
+from utils.paths import get_session_dir
+
 session_dir: str = "",  # empty default, resolved in __init__
 
 # In __init__:
@@ -533,7 +534,7 @@ from pathlib import Path
 
 import click
 
-from infrastructure.paths import (
+from utils.paths import (
     VERSION,
     ensure_dirs,
     get_config_dir,
@@ -715,7 +716,10 @@ for _name, _module in _MCP_SERVERS.items():
             import importlib
             m = importlib.import_module(mod)
             m.main()
+
         return _mcp_cmd
+
+
     _mcp.add_command(_make_mcp_command(_module))
 
 

@@ -10,7 +10,7 @@ from agents.evaluator import create_evaluator
 from agents.generator import create_generator
 from agents.planner import create_planner
 from config.config import LlmAgentConfig, LlmConfig, load_harness_config, load_llm_config, load_mcp_config
-from infrastructure.paths import ensure_dirs, get_config_dir, get_env_path, get_session_dir, get_workspace_dir
+from utils.paths import ensure_dirs, get_config_dir, get_env_path, get_session_dir, get_workspace_dir
 from orchestration.termination import create_termination_check
 
 

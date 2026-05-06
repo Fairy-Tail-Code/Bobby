@@ -37,8 +37,8 @@ from agents.factory import (
 from agents.channel_proxy import ChannelUserProxyAgent, ROLE_DESCRIPTIONS
 from infrastructure.channel.channel import ChannelAdapter
 from config.config import HarnessConfig, LlmConfig
-from infrastructure.frontend import Frontend
-from infrastructure.frontend_cli import CLIFrontend
+from fronted.frontend import Frontend
+from fronted.frontend_cli import CLIFrontend
 from infrastructure.mcp.manager import McpManager
 from infrastructure.session.session_snapshots import build_snapshot_path
 from infrastructure.skills.registry import SkillRegistry
@@ -101,7 +101,7 @@ class SwarmSession:
         hitl_mode: str = "feishu",
     ) -> None:
         if not session_dir:
-            from infrastructure.paths import get_session_dir
+            from utils.paths import get_session_dir
             session_dir = str(get_session_dir())
         self.chat_id = chat_id
         self._frontend = frontend

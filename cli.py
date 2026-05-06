@@ -17,7 +17,7 @@ from typing import Annotated, Sequence
 import typer
 import yaml
 
-from infrastructure.paths import (
+from utils.paths import (
     VERSION,
     ensure_dirs,
     get_config_dir,
@@ -99,11 +99,11 @@ async def _chat_main(prompt: str, mode: str | None) -> None:
     import logging
 
     from config.config import load_llm_config, load_mcp_config, load_harness_config
-    from infrastructure.frontend_cli import CLIFrontend, print_info, print_prompt as cli_print_prompt
+    from fronted.frontend_cli import CLIFrontend, print_info, print_prompt as cli_print_prompt
     from infrastructure.channel.channel_cli import CLIChannel
     from infrastructure.mcp.manager import create_mcp_manager
     from infrastructure.agent_pool import AgentPool
-    from infrastructure.paths import get_session_dir, get_system_skills_dir, get_user_skills_dir
+    from utils.paths import get_session_dir, get_system_skills_dir, get_user_skills_dir
     from infrastructure.session.session_manager import SessionManager
     from infrastructure.skills.registry import SkillRegistry
 
@@ -223,7 +223,7 @@ async def _repl_watch_session(session, chat_id: str, session_manager) -> None:
         pending_id = channel.get_any_pending_request_id()
         if pending_id is not None:
             try:
-                from infrastructure.frontend_cli import print_prompt as cli_print_prompt
+                from fronted.frontend_cli import print_prompt as cli_print_prompt
                 cli_print_prompt()
                 reply = input()
             except (EOFError, KeyboardInterrupt):

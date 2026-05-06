@@ -12,9 +12,9 @@ import re
 from pathlib import Path
 
 from config.config import HarnessConfig, LlmConfig
-from infrastructure.frontend import Frontend
+from fronted.frontend import Frontend
 from infrastructure.mcp.manager import McpManager
-from infrastructure.paths import get_session_dir
+from utils.paths import get_session_dir
 from infrastructure.session.session_snapshots import find_snapshot_path, iter_snapshot_paths
 from infrastructure.skills.registry import SkillRegistry
 from infrastructure.session.swarm_session import SwarmSession, _TERMINATE_KEYWORDS

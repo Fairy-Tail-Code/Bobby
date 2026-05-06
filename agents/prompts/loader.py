@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from infrastructure.paths import get_agent_prompts_dir
+from utils.paths import get_agent_prompts_dir
 
 
 def load_prompt(agent_name: str) -> str:

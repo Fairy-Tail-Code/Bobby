@@ -7,7 +7,7 @@ from typing import Any
 from mcp.server.fastmcp import FastMCP
 from mcp.types import ToolAnnotations
 
-from infrastructure.paths import get_default_runtime_cwd
+from utils.paths import get_default_runtime_cwd
 
 
 database_server = FastMCP("openharness-database", log_level="ERROR")

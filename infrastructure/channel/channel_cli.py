@@ -7,10 +7,9 @@ without stalling.
 from __future__ import annotations
 
 import asyncio
-import sys
 
 from infrastructure.channel.channel import ChannelAdapter
-from infrastructure.frontend_cli import print_prompt
+from fronted.frontend_cli import print_prompt
 
 
 class CLIChannel(ChannelAdapter):
