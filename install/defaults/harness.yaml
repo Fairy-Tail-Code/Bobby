@@ -32,6 +32,7 @@ harness:
 
   hitl:
     mode: email
+    gateways: []
     polling_interval: 30
     timeout: 3600
     subject_prefix: "[OpenHarness]"

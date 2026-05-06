@@ -1,4 +1,4 @@
-"""Session manager — routes Feishu messages to the right SwarmSession.
+"""Session manager — routes incoming gateway messages to the right SwarmSession.
 
 One SwarmSession per chat_id. Creates on first message, injects replies
 on subsequent messages, terminates on command, and supports session resume.
@@ -79,7 +79,7 @@ class SessionManager:
     async def handle_message(
         self, chat_id: str, open_id: str, chat_type: str, text: str,
     ) -> None:
-        """Route an incoming Feishu message.
+        """Route an incoming gateway message.
 
         - Mode switch command → set mode for this chat
         - Terminate keyword → kill the session

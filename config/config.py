@@ -122,7 +122,8 @@ class WeixinConfig:
 
 @dataclass
 class HitlConfig:
-    mode: str = "stdin"  # "stdin" | "email" | "dingtalk" | "feishu" | "weixin"
+    mode: str = "stdin"  # "stdin" | "email" | "dingtalk" | "gateway"
+    gateways: list[str] = field(default_factory=list)  # e.g. ["feishu", "weixin"]
     polling_interval: int = 30  # seconds between polls
     timeout: int = 3600  # max seconds to wait for a reply
     subject_prefix: str = "[OpenHarness]"
@@ -252,8 +253,16 @@ def load_harness_config() -> HarnessConfig:
         auto_compact_enabled=ctx_raw.get("auto_compact_enabled", True),
     )
     hitl_raw = raw.get("hitl", {})
+    hitl_mode = hitl_raw.get("mode", "stdin")
+    hitl_gateways = hitl_raw.get("gateways", [])
+    if not isinstance(hitl_gateways, list):
+        hitl_gateways = []
+    if hitl_mode in {"feishu", "weixin"} and not hitl_gateways:
+        hitl_gateways = [hitl_mode]
+        hitl_mode = "gateway"
     hitl = HitlConfig(
-        mode=hitl_raw.get("mode", "stdin"),
+        mode=hitl_mode,
+        gateways=[str(item).strip() for item in hitl_gateways if str(item).strip()],
         polling_interval=hitl_raw.get("polling_interval", 30),
         timeout=hitl_raw.get("timeout", 3600),
         subject_prefix=hitl_raw.get("subject_prefix", "[OpenHarness]"),

@@ -6,13 +6,16 @@ import logging
 from autogen import ConversableAgent
 
 from agents.channel_proxy import create_channel_proxies
-from gateway.email.channel_email import EmailChannel
-from gateway.dingtalk.channel_dingtalk import DingTalkChannel
-from gateway.feishu.channel_feishu import FeishuChannel
 from config.config import (
-    SmtpConfig, ImapConfig, HitlConfig,
-    DingTalkConfig, FeishuConfig,
+    DingTalkConfig,
+    FeishuConfig,
+    HitlConfig,
+    ImapConfig,
+    SmtpConfig,
 )
+from gateway.dingtalk.channel_dingtalk import DingTalkChannel
+from gateway.email.channel_email import EmailChannel
+from gateway.feishu.channel_feishu import FeishuChannel
 
 logger = logging.getLogger(__name__)
 
@@ -34,7 +37,8 @@ def create_email_channel_proxies(
     """Create email-based user proxies via the channel abstraction."""
     channel = EmailChannel(smtp_config, imap_config)
     return create_channel_proxies(
-        channel, role_emails,
+        channel,
+        role_emails,
         timeout=hitl_config.timeout,
         polling_interval=hitl_config.polling_interval,
     )
@@ -52,7 +56,8 @@ def create_dingtalk_channel_proxies(
         robot_code=dingtalk_config.robot_code,
     )
     return create_channel_proxies(
-        channel, role_user_ids,
+        channel,
+        role_user_ids,
         timeout=hitl_config.timeout,
         polling_interval=hitl_config.polling_interval,
     )
@@ -69,7 +74,8 @@ def create_feishu_channel_proxies(
         app_secret=feishu_config.app_secret,
     )
     return create_channel_proxies(
-        channel, role_open_ids,
+        channel,
+        role_open_ids,
         timeout=hitl_config.timeout,
         polling_interval=hitl_config.polling_interval,
     )

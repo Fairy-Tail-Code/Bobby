@@ -8,6 +8,7 @@ from __future__ import annotations
 import asyncio
 import logging
 import signal
+from collections.abc import Callable
 
 from config.config import (
     load_llm_config, load_mcp_config, load_harness_config,
@@ -33,13 +34,68 @@ logging.basicConfig(
 )
 logger = logging.getLogger(__name__)
 
+_GATEWAY_CHAT_ID_SEPARATOR = "::"
+
+
+def _encode_gateway_chat_id(platform: str, chat_id: str) -> str:
+    return f"{platform}{_GATEWAY_CHAT_ID_SEPARATOR}{chat_id}"
+
+
+def _decode_gateway_chat_id(chat_id: str) -> tuple[str, str]:
+    if _GATEWAY_CHAT_ID_SEPARATOR not in chat_id:
+        raise ConfigError(f"Invalid gateway chat_id: {chat_id!r}")
+    platform, raw_chat_id = chat_id.split(_GATEWAY_CHAT_ID_SEPARATOR, 1)
+    return platform, raw_chat_id
+
+
+class MultiGatewayFrontend:
+    """Frontend multiplexer that routes outbound messages by chat_id prefix."""
+
+    def __init__(self, frontends: dict[str, object]) -> None:
+        self._frontends = frontends
+
+    def _resolve(self, chat_id: str) -> tuple[object, str]:
+        platform, raw_chat_id = _decode_gateway_chat_id(chat_id)
+        frontend = self._frontends.get(platform)
+        if frontend is None:
+            raise ConfigError(f"Unsupported gateway platform: {platform!r}")
+        return frontend, raw_chat_id
+
+    async def send_text(self, chat_id: str, text: str) -> None:
+        frontend, raw_chat_id = self._resolve(chat_id)
+        await frontend.send_text(raw_chat_id, text)
+
+    async def stream_token(self, chat_id: str, agent_name: str, token: str) -> None:
+        frontend, raw_chat_id = self._resolve(chat_id)
+        await frontend.stream_token(raw_chat_id, agent_name, token)
+
+    async def on_tool_call(self, chat_id: str, agent_name: str, tool_name: str) -> None:
+        frontend, raw_chat_id = self._resolve(chat_id)
+        await frontend.on_tool_call(raw_chat_id, agent_name, tool_name)
+
+
+def _resolve_gateway_platforms(mode: str, gateways: list[str]) -> list[str]:
+    if mode == "gateway":
+        return [platform for platform in gateways if platform in {"feishu", "weixin"}]
+    if mode in {"feishu", "weixin"}:
+        return [mode]
+    return []
+
 
 def _build_gateway(
     *,
-    mode: str,
+    platform: str,
     session_manager: SessionManager,
-) -> tuple[str, object, object]:
-    if mode == "feishu":
+) -> tuple[str, object, Callable[[str], object]]:
+    async def _dispatch(chat_id: str, open_id: str, chat_type: str, text: str) -> None:
+        await session_manager.handle_message(
+            _encode_gateway_chat_id(platform, chat_id),
+            open_id,
+            chat_type,
+            text,
+        )
+
+    if platform == "feishu":
         feishu_config = load_feishu_config()
         if not feishu_config.app_id or not feishu_config.app_secret:
             raise ConfigError("缺少 FEISHU_APP_ID / FEISHU_APP_SECRET，请重新运行 'harness setup' 完成飞书扫码配置。")
@@ -47,12 +103,12 @@ def _build_gateway(
             app_id=feishu_config.app_id,
             app_secret=feishu_config.app_secret,
             domain=feishu_config.domain,
-            on_message=session_manager.handle_message,
+            on_message=_dispatch,
         )
         channel_factory = lambda chat_id: ChannelFeishuService(bot, chat_id)
         return "Feishu", bot, channel_factory
 
-    if mode == "weixin":
+    if platform == "weixin":
         weixin_config = load_weixin_config()
         if not weixin_config.account_id or not weixin_config.token:
             raise ConfigError("缺少 WEIXIN_ACCOUNT_ID / WEIXIN_TOKEN，请重新运行 'harness setup' 完成微信扫码配置。")
@@ -60,14 +116,13 @@ def _build_gateway(
             account_id=weixin_config.account_id,
             token=weixin_config.token,
             base_url=weixin_config.base_url,
-            on_message=session_manager.handle_message,
+            on_message=_dispatch,
         )
         channel_factory = lambda chat_id: ChannelWeixinService(bot, chat_id)
         return "Weixin", bot, channel_factory
 
     raise ConfigError(
-        "harness server 仅支持 feishu 或 weixin 网关。"
-        f" 当前 harness.hitl.mode={mode!r}，请先运行 'harness setup' 重新选择。"
+        f"Unsupported gateway platform: {platform!r}."
     )
 
 
@@ -128,20 +183,48 @@ async def main() -> None:
                 agent_pool=agent_pool,
             )
 
-            gateway_label, bot, channel_factory = _build_gateway(
-                mode=harness_config.hitl.mode,
-                session_manager=session_manager,
+            gateway_platforms = _resolve_gateway_platforms(
+                harness_config.hitl.mode,
+                harness_config.hitl.gateways,
             )
-            session_manager._frontend = bot
-            session_manager._channel_factory = channel_factory
-            session_manager._hitl_mode = harness_config.hitl.mode
-            bot.set_main_loop(asyncio.get_running_loop())
-            bot.start()
+            if not gateway_platforms:
+                raise ConfigError(
+                    "harness server 仅支持已启用的 feishu / weixin gateway。"
+                    " 请运行 'harness setup' 选择 messaging gateway 并勾选至少一个平台。"
+                )
+
+            gateway_labels: list[str] = []
+            bots: dict[str, object] = {}
+            channel_factories: dict[str, Callable[[str], object]] = {}
+            for platform in gateway_platforms:
+                gateway_label, bot, channel_factory = _build_gateway(
+                    platform=platform,
+                    session_manager=session_manager,
+                )
+                gateway_labels.append(gateway_label)
+                bots[platform] = bot
+                channel_factories[platform] = channel_factory
+
+            def _channel_factory(chat_id: str) -> object:
+                platform, raw_chat_id = _decode_gateway_chat_id(chat_id)
+                factory = channel_factories.get(platform)
+                if factory is None:
+                    raise ConfigError(f"Unsupported gateway platform: {platform!r}")
+                return factory(raw_chat_id)
+
+            session_manager._frontend = MultiGatewayFrontend(bots)
+            session_manager._channel_factory = _channel_factory
+            session_manager._hitl_mode = "gateway"
+
+            main_loop = asyncio.get_running_loop()
+            for bot in bots.values():
+                bot.set_main_loop(main_loop)
+                bot.start()
 
             logger.info(
-                "AG2 OpenHarness %s Gateway started. "
+                "AG2 OpenHarness Gateways started: %s. "
                 "Active MCP servers: %s",
-                gateway_label,
+                ", ".join(gateway_labels),
                 connected_servers,
             )
 
@@ -174,7 +257,8 @@ async def main() -> None:
 
             # Shutdown phase
             session_manager.terminate_all()
-            bot.stop()
+            for bot in bots.values():
+                bot.stop()
 
         # After async with exits, MCP is automatically disconnected
 

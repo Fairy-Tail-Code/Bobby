@@ -13,7 +13,6 @@ from config.config import (
     load_llm_config, load_mcp_config, load_harness_config,
     load_smtp_config, load_imap_config, load_role_emails,
     load_dingtalk_config, load_role_dingtalk_ids,
-    load_feishu_config, load_role_feishu_open_ids,
     load_knowledge_config,
 )
 from infrastructure.mcp.manager import create_mcp_manager
@@ -73,8 +72,6 @@ async def run(prompt: str) -> None:
         role_emails = None
         dingtalk_config = None
         role_dingtalk_ids = None
-        feishu_config = None
-        role_feishu_open_ids = None
 
         if harness_config.hitl.mode == "email":
             smtp_config = load_smtp_config()
@@ -85,12 +82,11 @@ async def run(prompt: str) -> None:
             dingtalk_config = load_dingtalk_config()
             role_dingtalk_ids = load_role_dingtalk_ids()
             logger.info("HITL mode: dingtalk (client_id=%s)", dingtalk_config.client_id[:6] + "..." if dingtalk_config.client_id else "N/A")
-        elif harness_config.hitl.mode == "feishu":
-            feishu_config = load_feishu_config()
-            role_feishu_open_ids = load_role_feishu_open_ids()
-            logger.info("HITL mode: feishu (app_id=%s)", feishu_config.app_id[:6] + "..." if feishu_config.app_id else "N/A")
-        elif harness_config.hitl.mode == "weixin":
-            logger.info("HITL mode: weixin (gateway service mode; local CLI owners will be used for harness run)")
+        elif harness_config.hitl.mode == "gateway":
+            logger.info(
+                "HITL mode: gateway (platforms=%s; local CLI owners will be used for harness run)",
+                harness_config.hitl.gateways or ["feishu"],
+            )
 
         # 创建所有智能体：包含技能、转接逻辑、人工代理（如需）
         logger.info("Creating agents (mode=%s)...", harness_config.mode)
@@ -102,8 +98,6 @@ async def run(prompt: str) -> None:
             role_emails=role_emails,
             dingtalk_config=dingtalk_config,
             role_dingtalk_ids=role_dingtalk_ids,
-            feishu_config=feishu_config,
-            role_feishu_open_ids=role_feishu_open_ids,
         )
 
         # 构建智能体列表

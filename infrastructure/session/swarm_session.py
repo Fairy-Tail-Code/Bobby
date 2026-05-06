@@ -1,8 +1,8 @@
-"""Single swarm session — one per Feishu chat.
+"""Single swarm session — one per gateway chat.
 
 Owns a set of agents, runs swarm in an asyncio.Task,
-intercepts agent messages and pushes to Feishu,
-and injects human replies from Feishu.
+intercepts agent messages and pushes them to the frontend,
+and injects human replies from the active gateway channel.
 """
 from __future__ import annotations
 
@@ -446,7 +446,7 @@ class SwarmSession:
     # --------------------------------------------------- reply injection
 
     async def inject_reply(self, text: str) -> bool:
-        """Inject a user reply from Feishu into the session.
+        """Inject a user reply from the gateway into the session.
 
         Routes to the channel proxy that is currently waiting.
         """

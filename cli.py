@@ -696,6 +696,27 @@ def _render_menu(title: str, labels: Sequence[str], selected_index: int, descrip
     return len(lines)
 
 
+def _render_multiselect_menu(
+    title: str,
+    labels: Sequence[str],
+    selected_index: int,
+    checked_indices: set[int],
+    description: str | None,
+) -> int:
+    lines = ["", f"  {title}"]
+    if description:
+        lines.extend(f"  {line}" for line in description.splitlines())
+    lines.append("  Use Up/Down to move, Space to toggle, Enter to confirm.")
+    lines.append("")
+    for index, label in enumerate(labels):
+        cursor = ">" if index == selected_index else " "
+        checked = "[x]" if index in checked_indices else "[ ]"
+        lines.append(f"  {cursor} {checked} {label}")
+    sys.stdout.write("".join(f"\x1b[2K{line}\n" for line in lines))
+    sys.stdout.flush()
+    return len(lines)
+
+
 def _read_menu_key() -> str:
     if sys.platform == "win32":
         import msvcrt
@@ -718,6 +739,8 @@ def _read_menu_key() -> str:
             return "up"
         if ch.lower() == "j":
             return "down"
+        if ch == " ":
+            return "space"
         return ""
 
     import select
@@ -741,6 +764,8 @@ def _read_menu_key() -> str:
         return "up"
     if ch.lower() == "j":
         return "down"
+    if ch == " ":
+        return "space"
     return ""
 
 
@@ -794,6 +819,87 @@ def _interactive_select_index(
             sys.stdout.write("\n")
             sys.stdout.flush()
             return selected_index
+        elif key == "escape":
+            sys.stdout.write("\n")
+            sys.stdout.flush()
+            return None
+
+
+def _interactive_multiselect_indices(
+    title: str,
+    labels: Sequence[str],
+    default_indices: Sequence[int] | None = None,
+    description: str | None = None,
+) -> list[int] | None:
+    line_count = 0
+    selected_index = 0
+    checked_indices = {
+        index for index in (default_indices or []) if 0 <= index < len(labels)
+    }
+
+    if sys.platform != "win32":
+        import termios
+        import tty
+
+        stdin_fd = sys.stdin.fileno()
+        original_attrs = termios.tcgetattr(stdin_fd)
+        try:
+            tty.setraw(stdin_fd)
+            while True:
+                if line_count:
+                    sys.stdout.write(f"\x1b[{line_count}F")
+                line_count = _render_multiselect_menu(
+                    title,
+                    labels,
+                    selected_index,
+                    checked_indices,
+                    description,
+                )
+                key = _read_menu_key()
+                if key == "up":
+                    selected_index = (selected_index - 1) % len(labels)
+                elif key == "down":
+                    selected_index = (selected_index + 1) % len(labels)
+                elif key == "space":
+                    if selected_index in checked_indices:
+                        checked_indices.remove(selected_index)
+                    else:
+                        checked_indices.add(selected_index)
+                elif key == "enter":
+                    sys.stdout.write("\n")
+                    sys.stdout.flush()
+                    return sorted(checked_indices)
+                elif key == "escape":
+                    sys.stdout.write("\n")
+                    sys.stdout.flush()
+                    return None
+        finally:
+            termios.tcsetattr(stdin_fd, termios.TCSADRAIN, original_attrs)
+
+    while True:
+        if line_count:
+            sys.stdout.write(f"\x1b[{line_count}F")
+        line_count = _render_multiselect_menu(
+            title,
+            labels,
+            selected_index,
+            checked_indices,
+            description,
+        )
+        key = _read_menu_key()
+        if key == "up":
+            selected_index = (selected_index - 1) % len(labels)
+        elif key == "down":
+            selected_index = (selected_index + 1) % len(labels)
+        elif key == "space":
+            if selected_index in checked_indices:
+                checked_indices.remove(selected_index)
+            else:
+                checked_indices.add(selected_index)
+        elif key == "enter":
+            sys.stdout.write("\n")
+            sys.stdout.flush()
+            return sorted(checked_indices)
         elif key == "escape":
             sys.stdout.write("\n")
             sys.stdout.flush()
@@ -866,10 +972,28 @@ def _get_hitl_mode() -> str:
     if not harness_path.exists():
         return "stdin"
     raw = yaml.safe_load(harness_path.read_text(encoding="utf-8")) or {}
-    return raw.get("harness", {}).get("hitl", {}).get("mode", "stdin")
+    mode = raw.get("harness", {}).get("hitl", {}).get("mode", "stdin")
+    return "gateway" if mode in {"feishu", "weixin"} else mode
 
 
-def _save_hitl_mode(mode: str) -> None:
+def _get_gateway_platforms() -> list[str]:
+    harness_path = get_config_dir() / "harness.yaml"
+    if not harness_path.exists():
+        return []
+    raw = yaml.safe_load(harness_path.read_text(encoding="utf-8")) or {}
+    hitl_raw = raw.get("harness", {}).get("hitl", {}) or {}
+    mode = hitl_raw.get("mode", "stdin")
+    gateways = hitl_raw.get("gateways", [])
+    if isinstance(gateways, list):
+        result = [str(item).strip() for item in gateways if str(item).strip()]
+        if result:
+            return result
+    if mode in {"feishu", "weixin"}:
+        return [mode]
+    return []
+
+
+def _save_hitl_mode(mode: str, gateways: Sequence[str] | None = None) -> None:
     harness_path = get_config_dir() / "harness.yaml"
     if not harness_path.exists():
         return
@@ -877,10 +1001,68 @@ def _save_hitl_mode(mode: str) -> None:
     harness_raw = raw.setdefault("harness", {})
     hitl_raw = harness_raw.setdefault("hitl", {})
     hitl_raw["mode"] = mode
+    if mode == "gateway":
+        hitl_raw["gateways"] = [item for item in gateways or []]
+    else:
+        hitl_raw.pop("gateways", None)
     harness_path.write_text(
         yaml.safe_dump(raw, allow_unicode=True, sort_keys=False),
         encoding="utf-8",
     )
+
+
+def _select_multiple_options(
+    title: str,
+    options: Sequence[tuple[str, str]],
+    defaults: Sequence[str] | None = None,
+    description: str | None = None,
+) -> list[str]:
+    default_values = [value for value in (defaults or []) if any(value == opt[0] for opt in options)]
+    if sys.stdin.isatty() and sys.stdout.isatty():
+        default_indices = [
+            index for index, (value, _) in enumerate(options)
+            if value in default_values
+        ]
+        selected_indices = _interactive_multiselect_indices(
+            title,
+            [label for _, label in options],
+            default_indices,
+            description,
+        )
+        if selected_indices is not None:
+            return [options[index][0] for index in selected_indices]
+
+    typer.echo(f"\n  {title}")
+    if description:
+        for line in description.splitlines():
+            typer.echo(f"  {line}")
+    for index, (_, label) in enumerate(options, start=1):
+        typer.echo(f"    {index}) {label}")
+
+    default_indexes = [
+        str(index)
+        for index, (value, _) in enumerate(options, start=1)
+        if value in default_values
+    ]
+    default_text = ",".join(default_indexes)
+    prompt_suffix = " (comma-separated)"
+    raw_choice = typer.prompt(
+        f"  Enter choices{prompt_suffix}",
+        default=default_text,
+        show_default=bool(default_text),
+    )
+
+    selected: list[str] = []
+    for token in [item.strip() for item in raw_choice.split(",") if item.strip()]:
+        try:
+            selected_index = int(token) - 1
+        except ValueError:
+            continue
+        if 0 <= selected_index < len(options):
+            value = options[selected_index][0]
+            if value not in selected:
+                selected.append(value)
+    return selected
 
 
 def _prompt_role_values(
@@ -1158,22 +1340,39 @@ def setup() -> None:
             ("stdin", "stdin (local terminal only)"),
             ("email", "email"),
             ("dingtalk", "dingtalk"),
-            ("feishu", "feishu / lark gateway"),
-            ("weixin", "weixin gateway"),
+            ("gateway", "messaging gateway (feishu / weixin, multi-select)"),
         ],
         default=_get_hitl_mode(),
         description="This updates config/harness.yaml and drives which gateway 'harness server start' will launch.",
     )
-    _save_hitl_mode(hitl_mode)
 
     if hitl_mode == "email":
+        _save_hitl_mode(hitl_mode)
         updates.update(_configure_email_hitl(existing_env))
     elif hitl_mode == "dingtalk":
+        _save_hitl_mode(hitl_mode)
         updates.update(_configure_dingtalk_hitl(existing_env))
-    elif hitl_mode == "feishu":
-        updates = _configure_feishu_gateway(existing_env, updates)
-    elif hitl_mode == "weixin":
-        updates = _configure_weixin_gateway(existing_env, updates)
+    elif hitl_mode == "gateway":
+        gateway_platforms = _select_multiple_options(
+            "Select gateway platforms",
+            [
+                ("feishu", "Feishu / Lark"),
+                ("weixin", "Weixin"),
+            ],
+            defaults=_get_gateway_platforms() or ["feishu"],
+            description="You can enable one or both. They will be started together by 'harness server start'.",
+        )
+        if not gateway_platforms:
+            typer.echo("  At least one gateway platform must be selected.", err=True)
+            raise typer.Exit(1)
+        for platform in gateway_platforms:
+            if platform == "feishu":
+                updates = _configure_feishu_gateway(existing_env, updates)
+            elif platform == "weixin":
+                updates = _configure_weixin_gateway(existing_env, updates)
+        _save_hitl_mode("gateway", gateway_platforms)
+    else:
+        _save_hitl_mode(hitl_mode)
 
     _write_env_values(env_path, updates)
     typer.echo(f"\n  Configuration saved to {env_path}")

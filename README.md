@@ -80,11 +80,11 @@ harness setup
 
 ```
 harness run <prompt>                    CLI 模式运行任务
-harness server start [-f]              启动当前配置的 gateway（飞书/微信）
+harness server start [-f]              启动当前配置的 gateway（可同时启用飞书/微信）
 harness server stop                    停止 gateway
 harness server restart                 重启 gateway
 harness install                        初始化/修复 ~/.openharness/
-harness setup                          交互式配置向导（含飞书/微信扫码网关）
+harness setup                          交互式配置向导（含飞书/微信扫码网关与多选）
 harness info                           显示安装信息
 harness version                        版本号
 ```
@@ -112,7 +112,7 @@ python cli.py install
 
 # 运行
 python cli.py run "你的需求描述"
-python server.py                  # 启动当前配置的 gateway
+python server.py                  # 启动当前配置的一个或多个 gateway
 ```
 
 ## 目录结构
@@ -167,12 +167,13 @@ harness:
     auto_compact_enabled: true
     max_rounds: 500
   hitl:
-    mode: stdin             # stdin | email | dingtalk | feishu | weixin
+    mode: stdin             # stdin | email | dingtalk | gateway
+    gateways: []            # 仅 mode=gateway 时生效，例如 [feishu, weixin]
   acpx:
     model: sonnet           # Claude Code 委托模式
 ```
 
-`harness setup` 里选择 `feishu` 或 `weixin` 后，会直接在终端输出二维码并自动写回 `.env`，不再要求手工填写飞书应用凭据。
+`harness setup` 里选择 `messaging gateway` 后，可以在终端勾选 `feishu`、`weixin` 中的一个或多个平台。扫码成功后会直接写回 `.env`，`harness server start` 会同时启动所有已勾选 gateway，并把两边消息汇入同一个 `SessionManager`。
 
 ### mcp.yaml
 
