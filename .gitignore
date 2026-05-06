@@ -2,12 +2,10 @@ __pycache__/
 .claude/
 .env
 /.env.example
-session/
 .openharness/
 .pytest_cache/
 .tmp_pytest/
 .test-tmp-*/
-
 workspace/
 todo/
 Discarded_plan/

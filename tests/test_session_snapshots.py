@@ -7,7 +7,7 @@ from contextlib import contextmanager
 from datetime import datetime
 from pathlib import Path
 
-from infrastructure.session_snapshots import (
+from infrastructure.session.session_snapshots import (
     build_snapshot_path,
     find_snapshot_path,
     iter_snapshot_paths,

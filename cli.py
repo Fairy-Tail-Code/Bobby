@@ -99,12 +99,12 @@ async def _chat_main(prompt: str, mode: str | None) -> None:
     import logging
 
     from config.config import load_llm_config, load_mcp_config, load_harness_config
-    from infrastructure.frontend_cli import CLIFrontend, print_info, print_error, print_prompt as cli_print_prompt
+    from infrastructure.frontend_cli import CLIFrontend, print_info, print_prompt as cli_print_prompt
     from infrastructure.channel.channel_cli import CLIChannel
     from infrastructure.mcp.manager import create_mcp_manager
     from infrastructure.agent_pool import AgentPool
     from infrastructure.paths import get_session_dir, get_system_skills_dir, get_user_skills_dir
-    from infrastructure.session_manager import SessionManager
+    from infrastructure.session.session_manager import SessionManager
     from infrastructure.skills.registry import SkillRegistry
 
     logging.basicConfig(
@@ -991,19 +991,69 @@ def _configure_dingtalk_hitl(existing_env: dict[str, str]) -> dict[str, str]:
 
 
 def _configure_feishu_hitl(existing_env: dict[str, str], updates: dict[str, str]) -> dict[str, str]:
-    if not updates.get("FEISHU_APP_ID"):
-        updates["FEISHU_APP_ID"] = _prompt_value(
-            "FEISHU_APP_ID",
-            "Feishu app id",
-            existing_env.get("FEISHU_APP_ID", ""),
+    # Ask user for configuration method
+    method = _select_option(
+        "feishu_config_method",
+        "How would you like to configure Feishu?",
+        [
+            ("scan", "Scan QR code to create app (recommended)"),
+            ("manual", "Manually enter App ID and Secret"),
+        ],
+        default="scan",
+    )
+
+    if method == "scan":
+        # Use QR registration to create app automatically
+        from gateway.feishu.feishu_onboard import qr_register
+
+        typer.echo("")
+        typer.echo("  ── Feishu QR Registration ──")
+        typer.echo("")
+
+        domain = _select_option(
+            "feishu_domain",
+            "Select platform",
+            [
+                ("feishu", "Feishu (China)"),
+                ("lark", "Lark (International)"),
+            ],
+            default="feishu",
         )
-    if not updates.get("FEISHU_APP_SECRET"):
-        updates["FEISHU_APP_SECRET"] = _prompt_value(
-            "FEISHU_APP_SECRET",
-            "Feishu app secret",
-            existing_env.get("FEISHU_APP_SECRET", ""),
-            secret=True,
-        )
+
+        qr_result = qr_register(initial_domain=domain, timeout_seconds=600)
+        if qr_result:
+            updates["FEISHU_APP_ID"] = qr_result["app_id"]
+            updates["FEISHU_APP_SECRET"] = qr_result["app_secret"]
+            typer.echo("")
+            typer.echo(f"  App created successfully!")
+            typer.echo(f"  App ID:     {qr_result['app_id']}")
+            typer.echo(f"  Domain:       {qr_result['domain']}")
+            if qr_result.get("bot_name"):
+                typer.echo(f"  Bot name:    {qr_result['bot_name']}")
+            typer.echo("")
+        else:
+            typer.echo("")
+            typer.echo("  QR registration failed or timed out.", err=True)
+            typer.echo("  Please try again or use manual configuration.", err=True)
+            # Fall through to manual mode
+            method = "manual"
+
+    if method == "manual":
+        # Manual entry of credentials
+        if not updates.get("FEISHU_APP_ID"):
+            updates["FEISHU_APP_ID"] = _prompt_value(
+                "FEISHU_APP_ID",
+                "Feishu app id",
+                existing_env.get("FEISHU_APP_ID", ""),
+            )
+        if not updates.get("FEISHU_APP_SECRET"):
+            updates["FEISHU_APP_SECRET"] = _prompt_value(
+                "FEISHU_APP_SECRET",
+                "Feishu app secret",
+                existing_env.get("FEISHU_APP_SECRET", ""),
+                secret=True,
+            )
+
     updates.update(
         _prompt_role_values(
             "same_hitl_feishu_open_id",

@@ -13,14 +13,14 @@ from config.config import (
     load_llm_config, load_mcp_config, load_harness_config,
     load_feishu_config,
 )
-from infrastructure.feishu_bot import FeishuBotService
-from infrastructure.channel.channel_feishu_service import ChannelFeishuService
+from gateway.feishu.feishu_bot import FeishuBotService
+from gateway.feishu.channel_feishu_service import ChannelFeishuService
 from infrastructure.mcp.manager import create_mcp_manager
 from infrastructure.agent_pool import AgentPool
 from infrastructure.paths import (
     get_session_dir, get_system_skills_dir, get_user_skills_dir,
 )
-from infrastructure.session_manager import SessionManager
+from infrastructure.session.session_manager import SessionManager
 from infrastructure.skills.registry import SkillRegistry
 
 logging.basicConfig(

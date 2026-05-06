@@ -14,15 +14,13 @@ import secrets
 import sys
 from dataclasses import dataclass, asdict
 from datetime import datetime
-from pathlib import Path
 from typing import Callable
 
 from autogen import ConversableAgent
 from autogen.agentchat.group.patterns import DefaultPattern
 from autogen.agentchat.group.multi_agent_chat import a_run_group_chat_iter
 from autogen.events.agent_events import (
-    TextEvent, ToolCallEvent, TerminationEvent,
-    RunCompletionEvent, ErrorEvent,
+    TextEvent, ToolCallEvent, RunCompletionEvent, ErrorEvent,
 )
 from autogen.events.client_events import StreamEvent
 
@@ -42,7 +40,7 @@ from config.config import HarnessConfig, LlmConfig
 from infrastructure.frontend import Frontend
 from infrastructure.frontend_cli import CLIFrontend
 from infrastructure.mcp.manager import McpManager
-from infrastructure.session_snapshots import build_snapshot_path
+from infrastructure.session.session_snapshots import build_snapshot_path
 from infrastructure.skills.registry import SkillRegistry
 from infrastructure.agent_pool import AgentPool
 

@@ -46,6 +46,25 @@ class FeishuBotService:
         self._ws_loop: asyncio.AbstractEventLoop | None = None
         self._started = False
 
+    @classmethod
+    def from_env(cls, on_message: Callable[[str, str, str], Awaitable[None]]) -> "FeishuBotService | None":
+        """Create FeishuBotService instance from environment variables.
+
+        Returns None if required environment variables are missing.
+
+        Env vars:
+            FEISHU_APP_ID: Feishu app ID (required)
+            FEISHU_APP_SECRET: Feishu app secret (required)
+        """
+        app_id = os.getenv("FEISHU_APP_ID")
+        app_secret = os.getenv("FEISHU_APP_SECRET")
+
+        if not app_id or not app_secret:
+            logger.warning("FEISHU_APP_ID or FEISHU_APP_SECRET not set")
+            return None
+
+        return cls(app_id, app_secret, on_message)
+
     def start(self) -> None:
         """Initialize lark client and start WS listener thread."""
         if self._started:

@@ -10,16 +10,14 @@ import json
 import logging
 import re
 from pathlib import Path
-from typing import Callable
 
 from config.config import HarnessConfig, LlmConfig
-from infrastructure.channel.channel import ChannelAdapter
 from infrastructure.frontend import Frontend
 from infrastructure.mcp.manager import McpManager
 from infrastructure.paths import get_session_dir
-from infrastructure.session_snapshots import find_snapshot_path, iter_snapshot_paths
+from infrastructure.session.session_snapshots import find_snapshot_path, iter_snapshot_paths
 from infrastructure.skills.registry import SkillRegistry
-from infrastructure.swarm_session import SwarmSession, _TERMINATE_KEYWORDS
+from infrastructure.session.swarm_session import SwarmSession, _TERMINATE_KEYWORDS
 from infrastructure.agent_pool import AgentPool
 
 logger = logging.getLogger(__name__)

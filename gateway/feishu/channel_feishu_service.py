@@ -10,7 +10,7 @@ import asyncio
 import logging
 
 from infrastructure.channel.channel import ChannelAdapter
-from infrastructure.feishu_bot import FeishuBotService
+from gateway.feishu.feishu_bot import FeishuBotService
 
 logger = logging.getLogger(__name__)
 
