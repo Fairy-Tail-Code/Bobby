@@ -41,14 +41,14 @@ def _version_callback(value: bool) -> None:
         raise typer.Exit()
 
 
-app = typer.Typer(
+app_cli = typer.Typer(
     name="harness",
     help="OpenHarness — Multi-agent full-stack application generation harness.",
     no_args_is_help=True,
 )
 
 
-@app.callback()
+@app_cli.callback()
 def main(
     version: Annotated[
         bool | None,
@@ -61,7 +61,7 @@ def main(
 # --- harness run <prompt> ---
 
 
-@app.command()
+@app_cli.command()
 def run(
     prompt: Annotated[list[str], typer.Argument(help="Task description prompt.")] = [],
 ) -> None:
@@ -76,7 +76,7 @@ def run(
 # --- harness chat ---
 
 
-@app.command()
+@app_cli.command()
 def chat(
     prompt: Annotated[list[str], typer.Argument(help="Optional initial prompt.")] = [],
     mode: Annotated[
@@ -86,7 +86,7 @@ def chat(
 ) -> None:
     """Interactive CLI chat with agents (like OpenAI Codex CLI).
 
-      harness chat "Build a todo app"           # Start with prompt
+      harness chat "Build a todo app_cli"           # Start with prompt
       harness chat                              # Interactive REPL mode
       harness chat --mode single "quick task"   # Force single mode
       harness chat --mode swarm "complex task"  # Force swarm mode
@@ -237,7 +237,7 @@ async def _repl_watch_session(session, chat_id: str, session_manager) -> None:
 # --- harness server start/stop/restart ---
 
 server_app = typer.Typer(help="Manage the Feishu service.")
-app.add_typer(server_app, name="server")
+app_cli.add_typer(server_app, name="server")
 
 
 @server_app.command("start")
@@ -429,7 +429,7 @@ def server_logs() -> None:
 # --- harness knowledge sync/search/status ---
 
 knowledge_app = typer.Typer(help="Manage the knowledge base.")
-app.add_typer(knowledge_app, name="knowledge")
+app_cli.add_typer(knowledge_app, name="knowledge")
 
 
 @knowledge_app.command("sync")
@@ -480,7 +480,7 @@ _MCP_SERVERS = {
 }
 
 _mcp_app = typer.Typer(help="Internal: run MCP servers.")
-app.add_typer(_mcp_app, name="_mcp", hidden=True)
+app_cli.add_typer(_mcp_app, name="_mcp", hidden=True)
 
 
 def _make_mcp_command(mod: str):
@@ -498,7 +498,7 @@ for _name, _module in _MCP_SERVERS.items():
 # --- harness install ---
 
 
-@app.command()
+@app_cli.command()
 def install() -> None:
     """Initialize or repair ~/.openharness/ configuration."""
     home = get_home()
@@ -919,7 +919,7 @@ def _configure_email_hitl(existing_env: dict[str, str]) -> dict[str, str]:
     updates["SMTP_USER"] = _prompt_value("SMTP_USER", "SMTP user", existing_env.get("SMTP_USER", ""))
     updates["SMTP_PASSWORD"] = _prompt_value(
         "SMTP_PASSWORD",
-        "SMTP password / app password",
+        "SMTP password / app_cli password",
         existing_env.get("SMTP_PASSWORD", ""),
         secret=True,
     )
@@ -937,7 +937,7 @@ def _configure_email_hitl(existing_env: dict[str, str]) -> dict[str, str]:
     )
     updates["IMAP_PASSWORD"] = _prompt_value(
         "IMAP_PASSWORD",
-        "IMAP password / app password",
+        "IMAP password / app_cli password",
         existing_env.get("IMAP_PASSWORD", updates["SMTP_PASSWORD"]),
         secret=True,
     )
@@ -996,14 +996,14 @@ def _configure_feishu_hitl(existing_env: dict[str, str], updates: dict[str, str]
         "feishu_config_method",
         "How would you like to configure Feishu?",
         [
-            ("scan", "Scan QR code to create app (recommended)"),
-            ("manual", "Manually enter App ID and Secret"),
+            ("scan", "Scan QR code to create app_cli (recommended)"),
+            ("manual", "Manually enter app_cli ID and Secret"),
         ],
         default="scan",
     )
 
     if method == "scan":
-        # Use QR registration to create app automatically
+        # Use QR registration to create app_cli automatically
         from gateway.feishu.feishu_onboard import qr_register
 
         typer.echo("")
@@ -1025,8 +1025,8 @@ def _configure_feishu_hitl(existing_env: dict[str, str], updates: dict[str, str]
             updates["FEISHU_APP_ID"] = qr_result["app_id"]
             updates["FEISHU_APP_SECRET"] = qr_result["app_secret"]
             typer.echo("")
-            typer.echo(f"  App created successfully!")
-            typer.echo(f"  App ID:     {qr_result['app_id']}")
+            typer.echo(f"  app_cli created successfully!")
+            typer.echo(f"  app_cli ID:     {qr_result['app_id']}")
             typer.echo(f"  Domain:       {qr_result['domain']}")
             if qr_result.get("bot_name"):
                 typer.echo(f"  Bot name:    {qr_result['bot_name']}")
@@ -1043,13 +1043,13 @@ def _configure_feishu_hitl(existing_env: dict[str, str], updates: dict[str, str]
         if not updates.get("FEISHU_APP_ID"):
             updates["FEISHU_APP_ID"] = _prompt_value(
                 "FEISHU_APP_ID",
-                "Feishu app id",
+                "Feishu app_cli id",
                 existing_env.get("FEISHU_APP_ID", ""),
             )
         if not updates.get("FEISHU_APP_SECRET"):
             updates["FEISHU_APP_SECRET"] = _prompt_value(
                 "FEISHU_APP_SECRET",
-                "Feishu app secret",
+                "Feishu app_cli secret",
                 existing_env.get("FEISHU_APP_SECRET", ""),
                 secret=True,
             )
@@ -1067,7 +1067,7 @@ def _configure_feishu_hitl(existing_env: dict[str, str], updates: dict[str, str]
     return updates
 
 
-@app.command()
+@app_cli.command()
 def setup() -> None:
     """Interactive configuration wizard for .env and HITL settings."""
     _ensure_setup_files()
@@ -1162,12 +1162,12 @@ def setup() -> None:
     ):
         updates["FEISHU_APP_ID"] = _prompt_value(
             "FEISHU_APP_ID",
-            "Feishu app id",
+            "Feishu app_cli id",
             existing_env.get("FEISHU_APP_ID", ""),
         )
         updates["FEISHU_APP_SECRET"] = _prompt_value(
             "FEISHU_APP_SECRET",
-            "Feishu app secret",
+            "Feishu app_cli secret",
             existing_env.get("FEISHU_APP_SECRET", ""),
             secret=True,
         )
@@ -1201,7 +1201,7 @@ def setup() -> None:
 # --- harness info ---
 
 
-@app.command()
+@app_cli.command()
 def info() -> None:
     """Show installation information."""
     typer.echo(f"OpenHarness v{VERSION}")
@@ -1237,4 +1237,4 @@ def info() -> None:
 
 
 if __name__ == "__main__":
-    app()
+    app_cli()

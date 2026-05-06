@@ -21,7 +21,7 @@ dependencies = [
 ]
 
 [project.scripts]
-harness = "cli:cli"
+harness = "cli:app_cli"
 
 [build-system]
 requires = ["hatchling"]
