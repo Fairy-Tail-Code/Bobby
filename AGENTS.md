@@ -25,6 +25,7 @@
 - [2026-05-09-beta-network-migration.md](docs/project_experience/2026-05-09-beta-network-migration.md) — 多 Agent 专家模式从 group chat/pattern 迁移到 AG2 beta network runtime
 - [2026-05-09-deepseek-response-format-fallback.md](docs/project_experience/2026-05-09-deepseek-response-format-fallback.md) — DeepSeek 不支持 `response_format=json_schema` 时，专家模式降级为 prompt JSON contract + runtime 本地解析
 - [2026-05-09-session-runtime-layering-refactor.md](docs/project_experience/2026-05-09-session-runtime-layering-refactor.md) — 将原 SwarmSession 拆为 AgentSession 壳层 + orchestration runtimes，清理 single/swarm 双路径混居
+- [2026-05-10-reapply-deepseek-response-format-fix.md](docs/project_experience/2026-05-10-reapply-deepseek-response-format-fix.md) — 在 session/runtime 重构后，将被覆盖的 DeepSeek `response_format` 兼容修复重新补回主线
 
 ## docs/AG2_knowledge/（AG2 框架知识库）
 
