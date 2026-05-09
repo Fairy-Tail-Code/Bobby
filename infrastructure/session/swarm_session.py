@@ -119,6 +119,7 @@ class SwarmSession:
         self._channel_proxies: dict[str, ChannelUserProxyAgent] = {}
         self._terminated = False
         self._prompt: str = ""
+        self._transcript: list[dict] = []
         self._is_resume: bool = False
         self._resume_messages: list[dict] = []
         self.owner_open_id: str | None = None  # Session creator, set by SessionManager
@@ -147,137 +148,15 @@ class SwarmSession:
         logger.info("SwarmSession resumed: chat_id=%s", self.chat_id)
 
     async def _run(self) -> None:
-        """Build agents, iterate events from group chat, and push to frontend."""
+        """Run either single-agent legacy chat or multi-agent beta-network flow."""
         try:
-            self._agents = self._create_agents()
-
             if self._mode == "single":
-                agents_list = [self._agents["assistant"]]
-                if "assistant_owner" in self._agents:
-                    agents_list.append(self._agents["assistant_owner"])
-                initial_agent = self._agents["assistant"]
+                await self._run_single_session()
             else:
-                agents_list = [
-                    self._agents["pm"],
-                    self._agents["planner"],
-                    self._agents["generator"],
-                    self._agents["evaluator"],
-                ]
-                for key in ("pm_owner", "planner_owner", "generator_owner", "evaluator_owner"):
-                    if key in self._agents:
-                        agents_list.append(self._agents[key])
-                initial_agent = self._agents["pm"]
-
-            pattern = DefaultPattern(
-                initial_agent=initial_agent,
-                agents=agents_list,
-            )
-
-            # Choose messages source
-            if self._is_resume:
-                valid_names = {a.name for a in agents_list}
-                messages_input = self._preprocess_resume_messages(
-                    self._resume_messages, valid_names,
-                )
-                if not messages_input:
-                    logger.warning(
-                        "All resume messages filtered out, falling back to prompt: chat_id=%s",
-                        self.chat_id,
-                    )
-                    messages_input = self._prompt
-                    self._is_resume = False
-            else:
-                messages_input = self._prompt
-
-            # === Event-driven iteration ===
-            chat_history: list[dict] = []
-            last_speaker_name = ""
-            session_id = SessionSnapshot.generate_id()
-            is_cli = isinstance(self._frontend, CLIFrontend)
-            streaming_active = False
-
-            async for event_response in a_run_group_chat_iter(
-                pattern=pattern,
-                messages=messages_input,
-                max_rounds=self._harness_config.max_rounds,
-            ):
-                event = event_response.content
-
-                # --- Streaming tokens (CLI only) ---
-                if isinstance(event, StreamEvent):
-                    if is_cli:
-                        if not streaming_active:
-                            sys.stdout.write("\n")
-                            streaming_active = True
-                        sys.stdout.write(event.content)
-                        sys.stdout.flush()
-                    continue
-
-                # Close streaming before processing other events
-                if streaming_active:
-                    streaming_active = False
-                    if is_cli:
-                        sys.stdout.write("\n")
-                        sys.stdout.flush()
-
-                if isinstance(event, TextEvent):
-                    content = event.content
-                    sender = event.sender
-                    if content and isinstance(content, str):
-                        stripped = content.strip()
-                        if is_cli:
-                            # Content already streamed, show agent label
-                            if (
-                                stripped
-                                and not re.match(r"^(Transfer to|TERMINATE|APPROVED|REJECTED)", stripped, re.IGNORECASE)
-                                and not sender.endswith("_owner")
-                            ):
-                                sys.stdout.write(f"  【{sender}】\n")
-                                sys.stdout.flush()
-                        else:
-                            # Non-streaming: send full text to frontend
-                            if (
-                                stripped
-                                and not re.match(r"^(Transfer to|TERMINATE|APPROVED|REJECTED)", stripped, re.IGNORECASE)
-                                and not sender.endswith("_owner")
-                            ):
-                                await self._frontend.send_text(
-                                    self.chat_id,
-                                    f"【{sender}】\n{stripped}",
-                                )
-
-                elif isinstance(event, ToolCallEvent):
-                    for tc in (event.tool_calls or []):
-                        fn_name = tc.get("function", {}).get("name", "unknown")
-                        if not fn_name.startswith("transfer_to_") and fn_name != "terminate_command":
-                            await self._frontend.on_tool_call(
-                                self.chat_id, event.sender, fn_name,
-                            )
-
-                elif isinstance(event, RunCompletionEvent):
-                    chat_history = event.history
-                    last_speaker_name = event.last_speaker
-                    self._save_snapshot(
-                        messages=chat_history,
-                        session_id=session_id,
-                        status="completed",
-                    )
-                    await self._frontend.send_text(
-                        self.chat_id,
-                        f"✅ 任务完成！最后发言: {last_speaker_name}\n"
-                        f"📋 会话ID（可用于恢复）: {session_id}",
-                    )
-
-                elif isinstance(event, ErrorEvent):
-                    logger.error("Group chat error: %s", event.error)
-
-            # Knowledge collection (fire-and-forget)
-            if chat_history:
-                await self._extract_and_persist_memory(chat_history, session_id, status="completed")
-                await self._collect_and_sync_knowledge(chat_history, session_id)
+                await self._run_network_swarm()
 
         except asyncio.CancelledError:
-            messages = self._extract_messages_from_agents()
+            messages = list(self._transcript) if self._transcript else self._extract_messages_from_agents()
             session_id = SessionSnapshot.generate_id()
             self._save_snapshot(
                 messages=messages,
@@ -302,6 +181,167 @@ class SwarmSession:
                 except Exception:
                     logger.exception("on_complete callback failed: chat_id=%s", self.chat_id)
 
+    async def _run_single_session(self) -> None:
+        """Run the legacy single-agent group-chat flow."""
+        self._agents = self._create_single_agents()
+        agents_list = [self._agents["assistant"]]
+        if "assistant_owner" in self._agents:
+            agents_list.append(self._agents["assistant_owner"])
+        initial_agent = self._agents["assistant"]
+
+        pattern = DefaultPattern(
+            initial_agent=initial_agent,
+            agents=agents_list,
+        )
+
+        if self._is_resume:
+            valid_names = {a.name for a in agents_list}
+            messages_input = self._preprocess_resume_messages(
+                self._resume_messages, valid_names,
+            )
+            if not messages_input:
+                logger.warning(
+                    "All resume messages filtered out, falling back to prompt: chat_id=%s",
+                    self.chat_id,
+                )
+                messages_input = self._prompt
+                self._is_resume = False
+        else:
+            messages_input = self._prompt
+
+        chat_history: list[dict] = []
+        last_speaker_name = ""
+        session_id = SessionSnapshot.generate_id()
+        is_cli = isinstance(self._frontend, CLIFrontend)
+        streaming_active = False
+
+        async for event_response in a_run_group_chat_iter(
+            pattern=pattern,
+            messages=messages_input,
+            max_rounds=self._harness_config.max_rounds,
+        ):
+            event = event_response.content
+
+            if isinstance(event, StreamEvent):
+                if is_cli:
+                    if not streaming_active:
+                        sys.stdout.write("\n")
+                        streaming_active = True
+                    sys.stdout.write(event.content)
+                    sys.stdout.flush()
+                continue
+
+            if streaming_active:
+                streaming_active = False
+                if is_cli:
+                    sys.stdout.write("\n")
+                    sys.stdout.flush()
+
+            if isinstance(event, TextEvent):
+                content = event.content
+                sender = event.sender
+                if content and isinstance(content, str):
+                    stripped = content.strip()
+                    if is_cli:
+                        if (
+                            stripped
+                            and not re.match(r"^(Transfer to|TERMINATE|APPROVED|REJECTED)", stripped, re.IGNORECASE)
+                            and not sender.endswith("_owner")
+                        ):
+                            sys.stdout.write(f"  【{sender}】\n")
+                            sys.stdout.flush()
+                    else:
+                        if (
+                            stripped
+                            and not re.match(r"^(Transfer to|TERMINATE|APPROVED|REJECTED)", stripped, re.IGNORECASE)
+                            and not sender.endswith("_owner")
+                        ):
+                            await self._frontend.send_text(
+                                self.chat_id,
+                                f"【{sender}】\n{stripped}",
+                            )
+
+            elif isinstance(event, ToolCallEvent):
+                for tc in (event.tool_calls or []):
+                    fn_name = tc.get("function", {}).get("name", "unknown")
+                    if not fn_name.startswith("transfer_to_") and fn_name != "terminate_command":
+                        await self._frontend.on_tool_call(
+                            self.chat_id, event.sender, fn_name,
+                        )
+
+            elif isinstance(event, RunCompletionEvent):
+                chat_history = event.history
+                self._transcript = list(chat_history)
+                last_speaker_name = event.last_speaker
+                self._save_snapshot(
+                    messages=chat_history,
+                    session_id=session_id,
+                    status="completed",
+                )
+                await self._frontend.send_text(
+                    self.chat_id,
+                    f"✅ 任务完成！最后发言: {last_speaker_name}\n"
+                    f"📋 会话ID（可用于恢复）: {session_id}",
+                )
+
+            elif isinstance(event, ErrorEvent):
+                logger.error("Group chat error: %s", event.error)
+
+        if chat_history:
+            await self._extract_and_persist_memory(chat_history, session_id, status="completed")
+            await self._collect_and_sync_knowledge(chat_history, session_id)
+
+    async def _run_network_swarm(self) -> None:
+        """Run the migrated multi-agent beta-network orchestration."""
+        from agents.beta_factory import create_swarm_network_agents
+        from orchestration.network_runtime import NetworkSwarmRuntime
+
+        runtime = NetworkSwarmRuntime(
+            agents=create_swarm_network_agents(
+                self._llm_config,
+                self._mcp_manager,
+                self._skill_registry,
+                self._harness_config,
+            ),
+            frontend=self._frontend,
+            channel=self._channel,
+            chat_id=self.chat_id,
+            max_rounds=self._harness_config.max_rounds,
+            hitl_timeout=self._harness_config.hitl.timeout,
+        )
+        result = await runtime.run(
+            prompt=self._prompt,
+            resume_messages=self._resume_messages if self._is_resume else None,
+        )
+        self._transcript = list(result.transcript)
+        session_id = SessionSnapshot.generate_id()
+        self._save_snapshot(
+            messages=self._transcript,
+            session_id=session_id,
+            status=result.status,
+        )
+
+        if result.status == "completed":
+            await self._frontend.send_text(
+                self.chat_id,
+                f"✅ 任务完成！最后发言: {result.last_speaker}\n"
+                f"📋 会话ID（可用于恢复）: {session_id}",
+            )
+        else:
+            await self._frontend.send_text(
+                self.chat_id,
+                f"⚠️ 任务已终止\n"
+                f"📋 会话ID（可用于恢复）: {session_id}",
+            )
+
+        if self._transcript:
+            await self._extract_and_persist_memory(
+                self._transcript,
+                session_id,
+                status=result.status,
+            )
+            await self._collect_and_sync_knowledge(self._transcript, session_id)
+
     def terminate(self) -> None:
         """Cancel the running swarm task."""
         if self._task and not self._task.done():
@@ -314,7 +354,9 @@ class SwarmSession:
             self._agents.clear()
             self._channel_proxies.clear()
             self._resume_messages.clear()
-            await self._channel.stop()
+            self._transcript.clear()
+            if self._channel:
+                await self._channel.stop()
         except Exception:
             logger.exception("Error disposing session chat_id=%s", self.chat_id)
 

@@ -4,7 +4,7 @@ from typing import Any, Callable
 
 
 def create_termination_check() -> Callable[[dict[str, Any]], bool]:
-    """允许任何 agent 在用户明确要求取消时终止流程。"""
+    """Only explicit Evaluator completion/termination messages end the legacy flow."""
     def is_termination_msg(msg: dict[str, Any]) -> bool:
         content = msg.get("content", "")
         name = msg.get("name", "")
@@ -14,10 +14,9 @@ def create_termination_check() -> Callable[[dict[str, Any]], bool]:
 
         content_upper = content.upper()
 
-        if "TERMINATE" in content_upper:
+        if name == "Evaluator" and "TERMINATE" in content_upper:
             return True
 
-        # Evaluator 审核通过也触发终止
         if name == "Evaluator" and "EVALUATION PASSED" in content_upper:
             return True
 

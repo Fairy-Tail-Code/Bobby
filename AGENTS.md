@@ -22,6 +22,7 @@
 - [2026-05-09-memory-merge-before-overwrite.md](docs/project_experience/2026-05-09-memory-merge-before-overwrite.md) — 自动抽取命中已有 memory 时先合并旧内容，仅在有效变化时写回
 - [2026-05-09-rollback-default-worktree-change.md](docs/project_experience/2026-05-09-rollback-default-worktree-change.md) — 回滚误加到 Bobby 项目内的默认 worktree 开发逻辑，改为仅作为开发协作习惯
 - [2026-05-09-weixin-hitl-cross-loop-fix.md](docs/project_experience/2026-05-09-weixin-hitl-cross-loop-fix.md) — 微信 HITL 跨事件循环修复：主 loop 发送桥接、线程安全 Future 注入
+- [2026-05-09-beta-network-migration.md](docs/project_experience/2026-05-09-beta-network-migration.md) — 多 Agent 专家模式从 group chat/pattern 迁移到 AG2 beta network runtime
 
 ## docs/AG2_knowledge/（AG2 框架知识库）
 
@@ -33,3 +34,4 @@
 - [飞书服务化.md](docs/AG2_knowledge/飞书服务化.md) — 飞书机器人常驻服务架构、组件交互、消息拦截、Future回复注入、使用方式
 - [Gateway服务化.md](docs/AG2_knowledge/Gateway服务化.md) — Gateway 主 loop 与 AG2 工作线程的异步边界、跨 loop 桥接原则
 - [记忆系统.md](docs/AG2_knowledge/记忆系统.md) — cc-haha 记忆系统拆解、AG2 中的 prompt 注入与 Tool 化落地方式
+- [Network模式.md](docs/AG2_knowledge/Network模式.md) — beta network 的概念映射、runtime 路由、MemoryStream、beta tool 与 HITL 落地方式

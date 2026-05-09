@@ -1,0 +1,121 @@
+# AG2 Beta Network 模式
+
+## 背景
+
+AG2 beta network 的核心思想是：多 agent 协作不再依赖框架内部的群聊 manager 负责“谁下一步发言”，而是把路由、人工接力、共享状态重新交还给应用本身。
+
+本项目在 `ag2==0.11.5` 上的落地采用了当前版本可用的 beta 基元：
+
+- `autogen.beta.Agent`
+- `autogen.beta.AgentReply`
+- `autogen.beta.MemoryStream`
+- `autogen.beta.config.OpenAIConfig`
+- `autogen.beta.middleware.builtin.HistoryLimiter`
+- `autogen.beta.middleware.builtin.TokenLimiter`
+- beta `FunctionTool`
+
+## 与 Group Chat 的概念映射
+
+### 1. Group Chat Pattern / Manager
+
+旧路径：
+
+- `DefaultPattern`
+- `a_run_group_chat_iter`
+- `OnCondition`
+- `Handoffs`
+
+beta network 路径：
+
+- 应用层自己维护 runtime
+- agent 只返回结构化决策
+- runtime 决定是否问人、是否交给下一个 agent、何时完成
+
+## 2. handoff tool call
+
+旧路径：
+
+- agent 通过 `transfer_to_*` 这类 tool call 切换角色
+
+beta network 路径：
+
+- agent 返回结构化字段，例如 `next_step=handoff_generator`
+- runtime 校验当前角色是否允许这个动作
+- runtime 负责真正调用下一个 agent
+
+## 3. 共享上下文
+
+旧路径：
+
+- group chat 中所有 agent 持有同一份消息副本
+
+beta network 路径：
+
+- 每个角色有自己的 `MemoryStream`
+- 应用层维护一份共享 transcript
+- handoff 时把“最新交接内容 + 共享 transcript 尾部”送给下一个角色
+
+这意味着：
+
+- agent 内部推理线程更独立
+- session resume 也更适合围绕 transcript 做，而不是依赖旧 manager 内部历史结构
+
+## 4. Human-in-the-Loop
+
+旧路径：
+
+- `UserProxyAgent`
+
+beta network 路径：
+
+- runtime 自己通过 `ChannelAdapter.send()` 发出问题
+- 通过 `wait_reply()` 等待人类回复
+- 再把回复送回当前角色继续执行
+
+本项目里这层仍然复用了既有的：
+
+- CLI channel
+- Feishu service channel
+- Weixin service channel
+
+## 5. Tool 注册
+
+旧路径：
+
+- `autogen.tools.Tool`
+- `register_for_llm()`
+- `register_for_execution()`
+
+beta network 路径：
+
+- beta `FunctionTool`
+- 在创建 `Agent` 时直接放入 `tools=[...]`
+
+对本项目的影响：
+
+- MCP 工具桥需要单独做一份 beta 版本
+- memory/skill 工具也要从“注册到 ConversableAgent”改成“直接生成 beta tool 列表”
+
+## 6. 上下文压缩
+
+旧路径：
+
+- `process_all_messages_before_reply` hook
+- Snip / AutoCompact transform
+
+beta network 路径：
+
+- middleware
+- `HistoryLimiter`
+- `TokenLimiter`
+
+如果未来要补自动摘要压缩，应优先写成 beta middleware，而不是继续依赖 `ConversableAgent` transform hook。
+
+## 本项目迁移建议
+
+1. single 模式可以暂时保留 legacy path，避免一次性扩大爆炸半径。
+2. 多 agent 专家模式优先切到 beta network runtime。
+3. prompt 中凡是提到 `transfer_to_*` 的旧指令，都要追加新的 network contract 覆盖。
+4. runtime 必须显式校验 `next_step`，否则 beta network 很容易退化成“模型想交给谁就交给谁”。
+5. 如果官方文档里的 beta 模块尚未进入当前 pip 版本，优先使用当前版本已经稳定暴露的 beta 基元完成概念迁移。
+
