@@ -17,7 +17,7 @@
 - [AG2_openharness开发经验.md](docs/project_experience/AG2_openharness开发经验.md) — 2026-04-17 Session上下文持久化与恢复：SessionSnapshot、harness resume/list命令
 - [AG2_openharness开发经验.md](docs/project_experience/AG2_openharness开发经验.md) — 2026-04-20 群聊用户识别（owner_open_id）、Workspace文件操作加锁（FileLock）
 - [2026-05-06-gateway-setup-feishu-weixin.md](docs/project_experience/2026-05-06-gateway-setup-feishu-weixin.md) — setup 直出二维码、飞书 domain 对齐、微信 gateway 接入
-- [2026-05-09-memory-system-cc-haha-alignment.md](docs/project_experience/2026-05-09-memory-system-cc-haha-alignment.md) — Bobby 记忆系统对齐 cc-haha：MEMORY.md、load/save memory、prompt 注入、Agent 接入
+- [2026-05-09-memory-system-cc-haha-alignment.md](docs/project_experience/2026-05-09-memory-system-alignment) — Bobby 记忆系统对齐 cc-haha：MEMORY.md、load/save memory、prompt 注入、Agent 接入
 - [2026-05-09-auto-memory-extraction.md](docs/project_experience/2026-05-09-auto-memory-extraction.md) — Session 收尾自动复盘对话，提炼 durable memory 并写回 MEMORY.md
 - [2026-05-09-memory-merge-before-overwrite.md](docs/project_experience/2026-05-09-memory-merge-before-overwrite.md) — 自动抽取命中已有 memory 时先合并旧内容，仅在有效变化时写回
 - [2026-05-09-rollback-default-worktree-change.md](docs/project_experience/2026-05-09-rollback-default-worktree-change.md) — 回滚误加到 Bobby 项目内的默认 worktree 开发逻辑，改为仅作为开发协作习惯

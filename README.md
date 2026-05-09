@@ -32,7 +32,7 @@ harness info          # 查看安装信息
 
 ### 升级
 
-拉取最新代码并重新安装依赖（不覆盖配置）：
+安装脚本会自动检查版本。如果有新版本，使用 `-Upgrade` 标志更新：
 
 ```powershell
 # Windows
@@ -43,6 +43,8 @@ irm https://raw.githubusercontent.com/iamikunnnnn/Bobby/main/install/install.ps1
 # macOS / Linux
 INSTALL_UPGRADE=true curl -fsSL https://raw.githubusercontent.com/iamikunnnnn/Bobby/main/install/install.sh | bash
 ```
+
+**版本管理**：使用 Git Tags（v0.0.1, v0.0.2...）进行版本控制。修改 `pyproject.toml` 中的版本号并推送到 main 分支后，GitHub Actions 会自动创建对应的 Release 和 Tag。
 
 ## 安装后配置
 

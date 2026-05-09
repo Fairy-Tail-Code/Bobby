@@ -33,6 +33,73 @@ $script:HasUv = $false
 # Helpers
 # ---------------------------------------------------------------------------
 
+function Get-LatestRemoteTag {
+    param([string]$RepoOwner, [string]$RepoName)
+
+    try {
+        $url = "https://api.github.com/repos/$RepoOwner/$RepoName/releases/latest"
+        $response = Invoke-RestMethod -Uri $url -ErrorAction Stop
+        return $response.tag_name
+    } catch {
+        Write-Warn "Could not fetch latest version from GitHub API: $_"
+        return $null
+    }
+}
+
+function Get-CurrentLocalTag {
+    param([string]$RepoDir)
+
+    if (-not (Test-Path $RepoDir)) { return $null }
+
+    Push-Location $RepoDir
+    try {
+        # Check if HEAD is exactly on a tag
+        $tag = git describe --exact-match --tags 2>$null
+        if ($tag) { return $tag }
+
+        # Get the most recent tag reachable from HEAD
+        $tag = git describe --tags --abbrev=0 2>$null
+        if ($tag) { return $tag }
+
+        return "dev"
+    } catch {
+        return "dev"
+    } finally {
+        Pop-Location
+    }
+}
+
+function Compare-Versions {
+    param([string]$Tag1, [string]$Tag2)
+
+    # Remove 'v' prefix and compare
+    $v1 = $Tag1 -replace '^v', ''
+    $v2 = $Tag2 -replace '^v', ''
+
+    if ($v1 -eq $v2) { return 0 }
+
+    try {
+        $parts1 = $v1 -split '\.' | ForEach-Object { [int]$_ }
+        $parts2 = $v2 -split '\.' | ForEach-Object { [int]$_ }
+
+        $maxLen = [Math]::Max($parts1.Count, $parts2.Count)
+        for ($i = 0; $i -lt $maxLen; $i++) {
+            $p1 = if ($i -lt $parts1.Count) { $parts1[$i] } else { 0 }
+            $p2 = if ($i -lt $parts2.Count) { $parts2[$i] } else { 0 }
+            if ($p1 -gt $p2) { return 1 }
+            if ($p1 -lt $p2) { return -1 }
+        }
+        return 0
+    } catch {
+        # If parsing fails, do string compare
+        return [string]::Compare($v1, $v2)
+    }
+}
+
+# ---------------------------------------------------------------------------
+# Helpers (original)
+# ---------------------------------------------------------------------------
+
 function Write-Banner {
     Write-Host ""
     Write-Host "  ╔══════════════════════════════════════╗" -ForegroundColor Cyan
@@ -145,37 +212,83 @@ function Initialize-DirectoryStructure {
 }
 
 function Install-HarnessSource {
-    param([string]$HarnessHome, [bool]$Upgrade = $false)
+    param([string]$HarnessHome, [bool]$Upgrade = $false, [ref]$LatestTag)
 
     $repoDir = Join-Path $HarnessHome "repo"
     $venvBin = Join-Path $repoDir ".venv\Scripts"
+    $script:LatestTag = Get-LatestRemoteTag -RepoOwner $script:RepoOwner -RepoName $script:RepoName
 
-    # Upgrade: git pull + uv sync
-    if ((Test-Path $repoDir) -and $Upgrade) {
-        Write-Host "  Updating source code..." -ForegroundColor Cyan
-        Push-Location $repoDir
-        try {
-            git pull
-            uv sync
-            Write-Ok "Updated to latest version"
-            return $true
-        } catch {
-            Write-Err "Update failed: $_"
-            return $false
-        } finally {
-            Pop-Location
-        }
+    if ($script:LatestTag) {
+        Write-Host "  Latest version: $script:LatestTag" -ForegroundColor Cyan
     }
 
-    # Fresh install or re-install
+    # Check existing installation
     if (Test-Path $repoDir) {
-        Write-Ok "Source repo already exists at $repoDir"
-        # Still run uv sync in case venv is missing
-        if (Test-Path $venvBin) {
-            return $true
+        $localTag = Get-CurrentLocalTag -RepoDir $repoDir
+        Write-Host "  Local version:  $localTag" -ForegroundColor Cyan
+
+        # Version comparison
+        if ($script:LatestTag -and $localTag -ne "dev") {
+            $comparison = Compare-Versions -Tag1 $script:LatestTag -Tag2 $localTag
+
+            if ($comparison -gt 0) {
+                Write-Host "  New version available!" -ForegroundColor Yellow
+                if ($Upgrade) {
+                    Write-Host "  Updating from $localTag to $script:LatestTag..." -ForegroundColor Cyan
+                    Push-Location $repoDir
+                    try {
+                        git fetch origin
+                        git checkout $script:LatestTag 2>$null
+                        if (-not $?) {
+                            git pull origin $script:LatestTag
+                        }
+                        uv sync
+                        Write-Ok "Updated to $script:LatestTag"
+                        return $true, $script:LatestTag
+                    } catch {
+                        Write-Err "Update failed: $_"
+                        return $false, $localTag
+                    } finally {
+                        Pop-Location
+                    }
+                } else {
+                    Write-Warn "Use -Upgrade flag to update from $localTag to $script:LatestTag"
+                    Write-Ok "Source repo already exists at $repoDir"
+                    if (Test-Path $venvBin) {
+                        return $true, $localTag
+                    }
+                }
+            } else {
+                Write-Ok "Already up to date at $localTag"
+                if (Test-Path $venvBin) {
+                    return $true, $localTag
+                }
+            }
+        } else {
+            # No version info or dev mode
+            if ($Upgrade) {
+                Write-Host "  Updating source code..." -ForegroundColor Cyan
+                Push-Location $repoDir
+                try {
+                    git pull
+                    uv sync
+                    Write-Ok "Updated to latest"
+                    return $true, "dev"
+                } catch {
+                    Write-Err "Update failed: $_"
+                    return $false, $localTag
+                } finally {
+                    Pop-Location
+                }
+            }
+            Write-Ok "Source repo already exists at $repoDir"
+            if (Test-Path $venvBin) {
+                return $true, $localTag
+            }
         }
     }
 
+    # Fresh install
     if (-not (Test-Path $repoDir)) {
         Write-Host "  Cloning repository..." -ForegroundColor Cyan
         git clone "https://github.com/$script:RepoOwner/$script:RepoName.git" $repoDir
@@ -192,14 +305,14 @@ function Install-HarnessSource {
 
     if (Test-Path $venvBin) {
         Write-Ok "Dependencies installed"
-        return $true
+        return $true, $script:LatestTag
     }
     Write-Err "uv sync failed - venv not created"
-    return $false
+    return $false, $null
 }
 
 function Initialize-DefaultConfigs {
-    param([string]$HarnessHome)
+    param([string]$HarnessHome, [string]$InstalledVersion = "unknown")
 
     $configDir = Join-Path $HarnessHome "config"
     $repoDir = Join-Path $HarnessHome "repo"
@@ -269,13 +382,13 @@ function Initialize-DefaultConfigs {
     # Write install marker
     $markerPath = Join-Path $HarnessHome ".install-marker"
     $marker = @{
-        version = "1.0.0"
+        version = $InstalledVersion
         installed_at = (Get-Date).ToUniversalTime().ToString("o")
         platform = "windows"
         channel = $script:Channel
     }
     $marker | ConvertTo-Json | Set-Content $markerPath
-    Write-Ok "Wrote install marker"
+    Write-Ok "Wrote install marker (version: $InstalledVersion)"
 }
 
 function Set-PathVariable {
@@ -352,10 +465,14 @@ function Main {
 
     # Install
     Initialize-DirectoryStructure $installHome
-    if (-not (Install-HarnessSource $installHome -Upgrade:$Upgrade)) {
+    $installResult = Install-HarnessSource $installHome -Upgrade:$Upgrade
+    $installSuccess = $installResult[0]
+    $installedVersion = if ($installResult[1]) { $installResult[1] } else { "unknown" }
+
+    if (-not $installSuccess) {
         return
     }
-    Initialize-DefaultConfigs $installHome
+    Initialize-DefaultConfigs $installHome -InstalledVersion $installedVersion
     Set-PathVariable $installHome
 
     # Setup wizard
@@ -367,6 +484,7 @@ function Main {
     Write-Host "  ║     Installation Complete!            ║" -ForegroundColor Green
     Write-Host "  ╚══════════════════════════════════════╝" -ForegroundColor Green
     Write-Host ""
+    Write-Host "  Version: $installedVersion" -ForegroundColor Cyan
     Write-Host "  Source:  $installHome\repo\" -ForegroundColor White
     Write-Host "  Config:  $installHome\config\" -ForegroundColor White
     Write-Host "  .env:    $installHome\.env" -ForegroundColor White
@@ -374,6 +492,12 @@ function Main {
     Write-Host "  Next steps:" -ForegroundColor Yellow
     Write-Host "    1. Open a new terminal (to refresh PATH)"
     Write-Host "    2. Run: harness info"
+    if (-not $Upgrade) {
+        Write-Host ""
+        Write-Host "  To upgrade later, run:" -ForegroundColor Yellow
+        Write-Host "    irm https://raw.githubusercontent.com/iamikunnnnn/Bobby/main/install/install.ps1 -OutFile install.ps1"
+        Write-Host "    .\install.ps1 -Upgrade"
+    }
 }
 
 try {

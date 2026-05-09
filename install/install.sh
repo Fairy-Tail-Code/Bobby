@@ -21,6 +21,72 @@ HAS_GIT=false
 # ---------------------------------------------------------------------------
 # Helpers
 # ---------------------------------------------------------------------------
+
+get_latest_remote_tag() {
+    local url="https://api.github.com/repos/$REPO_OWNER/$REPO_NAME/releases/latest"
+    if command -v curl &>/dev/null; then
+        curl -fsSL -L "$url" 2>/dev/null | grep -o '"tag_name": *"[^"]*"' | cut -d'"' -f4
+    elif command -v wget &>/dev/null; then
+        wget -qO- -L "$url" 2>/dev/null | grep -o '"tag_name": *"[^"]*"' | cut -d'"' -f4
+    else
+        warn "curl/wget not available, cannot check remote version"
+        echo ""
+    fi
+}
+
+get_current_local_tag() {
+    local repo_dir="$1"
+    [[ ! -d "$repo_dir" ]] && return 0
+
+    cd "$repo_dir" 2>/dev/null || return 0
+    local tag
+    # Check if HEAD is exactly on a tag
+    tag=$(git describe --exact-match --tags 2>/dev/null || true)
+    if [[ -n "$tag" ]]; then
+        echo "$tag"
+        cd - > /dev/null
+        return 0
+    fi
+
+    # Get the most recent tag reachable from HEAD
+    tag=$(git describe --tags --abbrev=0 2>/dev/null || true)
+    if [[ -n "$tag" ]]; then
+        echo "$tag"
+    else
+        echo "dev"
+    fi
+    cd - > /dev/null
+}
+
+compare_versions() {
+    local tag1="$1"
+    local tag2="$2"
+
+    # Remove 'v' prefix
+    local v1="${tag1#v}"
+    local v2="${tag2#v}"
+
+    [[ "$v1" == "$v2" ]] && echo 0 && return
+
+    # Split by dots and compare
+    IFS='.' read -ra arr1 <<< "$v1"
+    IFS='.' read -ra arr2 <<< "$v2"
+
+    local max_len=$(( ${#arr1[@]} > ${#arr2[@]} ? ${#arr1[@]} : ${#arr2[@]} ))
+
+    for ((i=0; i<max_len; i++)); do
+        local p1=${arr1[i]:-0}
+        local p2=${arr2[i]:-0}
+        [[ $p1 -gt $p2 ]] && echo 1 && return
+        [[ $p1 -lt $p2 ]] && echo -1 && return
+    done
+
+    echo 0
+}
+
+# ---------------------------------------------------------------------------
+# Helpers (original)
+# ---------------------------------------------------------------------------
 RED='\033[0;31m'
 GREEN='\033[0;32m'
 YELLOW='\033[1;33m'
@@ -140,27 +206,72 @@ init_directory_structure() {
 install_harness_source() {
     local home="$1"
     local repo_dir="$home/repo"
+    local latest_tag installed_version
 
-    # Upgrade: git pull + uv sync
-    if [[ -d "$repo_dir" ]] && [[ "$UPGRADE" == "true" ]]; then
-        info "Updating source code..."
-        cd "$repo_dir"
-        git pull
-        uv sync
-        ok "Updated to latest version"
-        cd - > /dev/null
-        return 0
+    latest_tag=$(get_latest_remote_tag)
+    if [[ -n "$latest_tag" ]]; then
+        info "Latest version: $latest_tag"
     fi
 
-    # Fresh install
+    # Check existing installation
     if [[ -d "$repo_dir" ]]; then
-        ok "Source repo already exists at $repo_dir"
-        # Still run uv sync if venv is missing
-        if [[ -d "$repo_dir/.venv" ]]; then
-            return 0
+        local local_tag
+        local_tag=$(get_current_local_tag "$repo_dir")
+        info "Local version:  $local_tag"
+
+        # Version comparison
+        if [[ -n "$latest_tag" ]] && [[ "$local_tag" != "dev" ]]; then
+            local comparison
+            comparison=$(compare_versions "$latest_tag" "$local_tag")
+
+            if [[ "$comparison" -gt 0 ]]; then
+                warn "New version available!"
+                if [[ "$UPGRADE" == "true" ]]; then
+                    info "Updating from $local_tag to $latest_tag..."
+                    cd "$repo_dir"
+                    git fetch origin
+                    git checkout "$latest_tag" 2>/dev/null || git pull origin "$latest_tag"
+                    uv sync
+                    ok "Updated to $latest_tag"
+                    cd - > /dev/null
+                    echo "$latest_tag"
+                    return 0
+                else
+                    warn "Use INSTALL_UPGRADE=true to update from $local_tag to $latest_tag"
+                    ok "Source repo already exists at $repo_dir"
+                    if [[ -d "$repo_dir/.venv" ]]; then
+                        echo "$local_tag"
+                        return 0
+                    fi
+                fi
+            else
+                ok "Already up to date at $local_tag"
+                if [[ -d "$repo_dir/.venv" ]]; then
+                    echo "$local_tag"
+                    return 0
+                fi
+            fi
+        else
+            # No version info or dev mode
+            if [[ "$UPGRADE" == "true" ]]; then
+                info "Updating source code..."
+                cd "$repo_dir"
+                git pull
+                uv sync
+                ok "Updated to latest"
+                cd - > /dev/null
+                echo "dev"
+                return 0
+            fi
+            ok "Source repo already exists at $repo_dir"
+            if [[ -d "$repo_dir/.venv" ]]; then
+                echo "$local_tag"
+                return 0
+            fi
         fi
     fi
 
+    # Fresh install
     if [[ ! -d "$repo_dir" ]]; then
         info "Cloning repository..."
         git clone "https://github.com/$REPO_OWNER/$REPO_NAME.git" "$repo_dir"
@@ -174,14 +285,17 @@ install_harness_source() {
 
     if [[ -d "$repo_dir/.venv" ]]; then
         ok "Dependencies installed"
+        echo "${latest_tag:-unknown}"
         return 0
     fi
     err "uv sync failed - venv not created"
+    echo "unknown"
     return 1
 }
 
 init_default_configs() {
     local home="$1"
+    local installed_version="${2:-unknown}"
     local config_dir="$home/config"
     local repo_dir="$home/repo"
     local defaults_dir="$repo_dir/install/defaults"
@@ -247,13 +361,13 @@ init_default_configs() {
     local marker_path="$home/.install-marker"
     cat > "$marker_path" <<MARKER_EOF
 {
-  "version": "1.0.0",
+  "version": "$installed_version",
   "installed_at": "$(date -u +%Y-%m-%dT%H:%M:%SZ)",
   "platform": "$(uname -s)",
   "channel": "$CHANNEL"
 }
 MARKER_EOF
-    ok "Wrote install marker"
+    ok "Wrote install marker (version: $installed_version)"
 }
 
 set_path_variable() {
@@ -334,8 +448,12 @@ main() {
 
     # Install
     init_directory_structure "$home"
-    install_harness_source "$home"
-    init_default_configs "$home"
+    installed_version=$(install_harness_source "$home")
+    local install_success=$?
+    if [[ $install_success -ne 0 ]]; then
+        return
+    fi
+    init_default_configs "$home" "$installed_version"
     set_path_variable "$home"
 
     # Setup wizard
@@ -347,6 +465,7 @@ main() {
     echo -e "  ${GREEN}║     Installation Complete!            ║${NC}"
     echo -e "  ${GREEN}╚══════════════════════════════════════╝${NC}"
     echo ""
+    echo -e "  ${CYAN}Version: $installed_version${NC}"
     echo "  Source:  $home/repo/"
     echo "  Config:  $home/config/"
     echo "  .env:    $home/.env"
@@ -354,6 +473,11 @@ main() {
     echo -e "  ${YELLOW}Next steps:${NC}"
     echo "    1. Run: source ~/.bashrc  (or restart your shell)"
     echo "    2. Run: harness info"
+    if [[ "$UPGRADE" != "true" ]]; then
+        echo ""
+        echo -e "  ${YELLOW}To upgrade later, run:${NC}"
+        echo "    INSTALL_UPGRADE=true curl -fsSL https://raw.githubusercontent.com/iamikunnnnn/Bobby/main/install/install.sh | bash"
+    fi
 }
 
 trap 'err "Installation failed on line $LINENO"; exit 1' ERR
