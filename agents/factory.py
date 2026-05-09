@@ -5,22 +5,15 @@ import logging
 from autogen import ConversableAgent
 from autogen.agentchat.group import OnCondition
 from autogen.agentchat.group.handoffs import Handoffs
-from autogen.agentchat.group.targets.transition_target import AgentTarget, StayTarget, TerminateTarget
 from autogen.agentchat.group.llm_condition import StringLLMCondition
+from autogen.agentchat.group.targets.transition_target import AgentTarget, TerminateTarget
 
-from agents.planner import create_planner
-from agents.generator import create_generator
-from agents.evaluator import create_evaluator
-from agents.PM import create_pm
 from agents.single import create_single
-from agents.channel_proxy import ROLE_DESCRIPTIONS
-from agents.user import (
-    create_email_channel_proxies,
-    create_dingtalk_channel_proxies,
-)
 from config.config import (
-    ContextConfig, HarnessConfig, LlmConfig, SkillAssignmentConfig,
-    DingTalkConfig, SmtpConfig, ImapConfig,
+    ContextConfig,
+    HarnessConfig,
+    LlmConfig,
+    SkillAssignmentConfig,
     load_skill_assignment_config,
 )
 from infrastructure.context.auto_compact import AutoCompactTransform
@@ -44,8 +37,6 @@ def _get_skill_assignment() -> SkillAssignmentConfig:
     if _skill_assignment is None:
         _skill_assignment = load_skill_assignment_config()
     return _skill_assignment
-
-
 
 
 def _register_context_transforms(
@@ -89,78 +80,6 @@ def _register_context_transforms(
         len(transforms), agent.name,
     )
 
-
-def create_pm_agent(
-    llm_config: LlmConfig,
-    mcp_manager: McpManager | None = None,
-    harness_config: HarnessConfig | None = None,
-) -> ConversableAgent:
-    """Create a PM agent with basic MCP tools (workspace, shell)."""
-    agent = create_pm(llm_config)
-    if mcp_manager:
-        register_tools_for_agent(agent, mcp_manager, _get_skill_assignment().mcp_servers.get("pm", []))
-    if harness_config and harness_config.memory.enabled:
-        inject_memory_block(agent, harness_config.memory)
-        register_memory_tools(agent, harness_config.memory)
-    return agent
-
-
-def create_planner_agent(
-    llm_config: LlmConfig,
-    mcp_manager: McpManager | None = None,
-    skill_registry: SkillRegistry | None = None,
-    harness_config: HarnessConfig | None = None,
-) -> ConversableAgent:
-    """Create a Planner agent with analysis skills."""
-    agent = create_planner(llm_config)
-    sa = _get_skill_assignment()
-    if mcp_manager:
-        register_tools_for_agent(agent, mcp_manager, sa.mcp_servers.get("planner", []))
-    if skill_registry:
-        inject_skill_summaries(agent, sa.skills.get("planner", []), skill_registry)
-        register_load_skill_tool(agent, skill_registry, sa.skills.get("planner", []))
-    if harness_config and harness_config.memory.enabled:
-        inject_memory_block(agent, harness_config.memory)
-        register_memory_tools(agent, harness_config.memory)
-    return agent
-
-
-def create_generator_agent(
-    llm_config: LlmConfig,
-    mcp_manager: McpManager,
-    skill_registry: SkillRegistry | None = None,
-    harness_config: HarnessConfig | None = None,
-) -> ConversableAgent:
-    """Create a Generator agent with MCP tools and build skills."""
-    agent = create_generator(llm_config)
-    sa = _get_skill_assignment()
-    register_tools_for_agent(agent, mcp_manager, sa.mcp_servers.get("generator", []))
-    if skill_registry:
-        inject_skill_summaries(agent, sa.skills.get("generator", []), skill_registry)
-        register_load_skill_tool(agent, skill_registry, sa.skills.get("generator", []))
-    if harness_config and harness_config.memory.enabled:
-        inject_memory_block(agent, harness_config.memory)
-        register_memory_tools(agent, harness_config.memory)
-    return agent
-
-
-def create_evaluator_agent(
-    llm_config: LlmConfig,
-    mcp_manager: McpManager,
-    skill_registry: SkillRegistry | None = None,
-    harness_config: HarnessConfig | None = None,
-) -> ConversableAgent:
-    """Create an Evaluator agent with browser/shell tools and testing skills."""
-    agent = create_evaluator(llm_config)
-    sa = _get_skill_assignment()
-    register_tools_for_agent(agent, mcp_manager, sa.mcp_servers.get("evaluator", []))
-    if skill_registry:
-        inject_skill_summaries(agent, sa.skills.get("evaluator", []), skill_registry)
-        register_load_skill_tool(agent, skill_registry, sa.skills.get("evaluator", []))
-    if harness_config and harness_config.memory.enabled:
-        inject_memory_block(agent, harness_config.memory)
-        register_memory_tools(agent, harness_config.memory)
-    return agent
 
 def create_single_agent(
     llm_config: LlmConfig,
@@ -208,213 +127,3 @@ def setup_single_handoffs(agents: dict[str, ConversableAgent]) -> None:
 
     agents["assistant_owner"].handoffs = Handoffs()
     agents["assistant_owner"].handoffs.set_after_work(AgentTarget(assistant))
-def setup_handoffs(agents: dict[str, ConversableAgent]) -> None:
-    """Set up swarm handoff conditions between agents.
-
-    PM -> Planner (PRD 完成)
-    PM -> pm_owner (需要用户补充信息)
-    Planner -> Generator (需求拆解完毕)
-    Planner -> Generator/Evaluator (回答问题后交回)
-    Generator -> Evaluator (编码完成)
-    Generator -> Planner (需求不清晰)
-    Evaluator -> Generator (审核不通过)
-    Evaluator -> Planner (需求不足)
-    Evaluator -> TERMINATE (审核通过)
-
-    Each AI agent hands off to its dedicated role owner.
-    """
-    pm = agents["pm"]
-    planner = agents["planner"]
-    generator = agents["generator"]
-    evaluator = agents["evaluator"]
-
-    pm_human = AgentTarget(agents["pm_owner"])
-    planner_human = AgentTarget(agents["planner_owner"])
-    generator_human = AgentTarget(agents["generator_owner"])
-    evaluator_human = AgentTarget(agents["evaluator_owner"])
-
-    _TERMINATE_CONDITION = StringLLMCondition(
-        "TERMINATE，当用户明确表示要取消、终止、不再继续任务时")
-
-    # PM handoffs
-    pm.handoffs = Handoffs()
-    pm.handoffs.add_llm_conditions([
-        OnCondition(
-            target=TerminateTarget(),
-            condition=_TERMINATE_CONDITION,
-        ),
-        OnCondition(
-            target=AgentTarget(planner),
-            condition=StringLLMCondition("TRANSFER TO PLANNER，当PRD已完成且经过用户确认，可以交给Planner进行技术拆解时"),
-        ),
-        OnCondition(
-            target=pm_human,
-            condition=StringLLMCondition(
-                "TRANSFER TO USER，当需要向用户提问以补充需求信息、澄清模糊之处、或确认PRD草稿时"),
-        ),
-    ]).set_after_work(StayTarget())
-
-    planner.handoffs = Handoffs()
-    planner.handoffs.add_llm_conditions([
-        OnCondition(
-            target=TerminateTarget(),
-            condition=_TERMINATE_CONDITION,
-        ),
-        OnCondition(
-            target=AgentTarget(generator),
-            condition=StringLLMCondition("TRANSFER TO GENERATOR,当plan撰写完成并需要将计划交接给generator开始编程时，或者当generator提出了问题需要向generator回答时"),
-        ),
-        OnCondition(
-            target=AgentTarget(evaluator),
-            condition=StringLLMCondition("TRANSFER TO EVALUATOR,当plan撰写完成并需要将计划交接给evaluator时，用于evaluator等待generator完成后根据计划进行验证"),
-        ),
-        OnCondition(
-            target=planner_human,
-            condition=StringLLMCondition(
-                "TRANSFER TO USER,当你针对某一点模糊的信息需要用户明确/补充时，这个行为需要积极触发，目前默认至少触发一次"),
-        ),
-    ]).set_after_work(StayTarget())
-
-    generator.handoffs = Handoffs()
-    generator.handoffs.add_llm_conditions([
-        OnCondition(
-            target=TerminateTarget(),
-            condition=_TERMINATE_CONDITION,
-        ),
-        OnCondition(
-            target=AgentTarget(evaluator),
-            condition=StringLLMCondition("TRANSFER TO EVALUATOR，当代码编写完成需要交给reviewer检查时"),
-        ),
-        OnCondition(
-            target=AgentTarget(planner),
-            condition=StringLLMCondition("TRANSFER TO PLANNER，当信息不足期望向planner询问更多信息时"),
-        ),
-        OnCondition(
-            target=generator_human,
-            condition=StringLLMCondition("TRANSFER TO USER，执行风险操作时征求用户意见"),
-        ),
-    ]).set_after_work(StayTarget())
-
-    evaluator.handoffs = Handoffs()
-    evaluator.handoffs.add_llm_conditions([
-        OnCondition(
-            target=TerminateTarget(),
-            condition=_TERMINATE_CONDITION,
-        ),
-        OnCondition(
-            target=AgentTarget(generator),
-            condition=StringLLMCondition("TRANSFER TO GENERATOR"),
-        ),
-        OnCondition(
-            target=AgentTarget(planner),
-            condition=StringLLMCondition("TRANSFER TO PLANNER"),
-        ),
-        OnCondition(
-            target=evaluator_human,
-            condition=StringLLMCondition("TRANSFER TO USER，执行风险操作时征求用户意见"),
-        ),
-    ]).set_after_work(TerminateTarget())
-
-    # Human proxies return to their corresponding AI agent after responding
-    agents["pm_owner"].handoffs = Handoffs()
-    agents["pm_owner"].handoffs.set_after_work(AgentTarget(pm))
-    for owner_key in ("planner_owner", "generator_owner", "evaluator_owner"):
-        agents[owner_key].handoffs = Handoffs()
-        agents[owner_key].handoffs.set_after_work(AgentTarget(planner))
-def create_all_agents(
-    llm_config: LlmConfig,
-    mcp_manager: McpManager,
-    skill_registry: SkillRegistry | None = None,
-    harness_config: HarnessConfig | None = None,
-    smtp_config: SmtpConfig | None = None,
-    imap_config: ImapConfig | None = None,
-    role_emails: dict[str, str] | None = None,
-    dingtalk_config: DingTalkConfig | None = None,
-    role_dingtalk_ids: dict[str, str] | None = None,
-    mode: str | None = None,
-) -> dict[str, ConversableAgent]:
-    """Create agents based on mode.
-
-    Args:
-        mode: Override harness_config.mode. Useful for runtime switching.
-              If None, reads from harness_config.
-
-    Modes:
-      - ``swarm``  : multi-agent (PM, Planner, Generator, Evaluator)
-      - ``single`` : one Assistant + user proxy
-    """
-    hitl_mode = harness_config.hitl.mode if harness_config else "stdin"
-    hitl_cfg = harness_config.hitl if harness_config else None
-    effective_mode = mode or (harness_config.mode if harness_config else "swarm")
-
-    # ---- Single mode ----
-    if effective_mode == "single":
-        agents: dict[str, ConversableAgent] = {
-            "assistant": create_single_agent(llm_config, mcp_manager, skill_registry, harness_config),
-        }
-
-        # HITL proxy for single mode
-        if hitl_mode == "email" and smtp_config and imap_config and role_emails:
-            proxies = create_email_channel_proxies(
-                smtp_config, imap_config, hitl_cfg, role_emails,
-            )
-            agents.update(proxies)
-        elif hitl_mode == "dingtalk" and dingtalk_config and role_dingtalk_ids:
-            proxies = create_dingtalk_channel_proxies(
-                dingtalk_config, hitl_cfg, role_dingtalk_ids,
-            )
-            agents.update(proxies)
-        else:
-            agents["assistant_owner"] = ConversableAgent(
-                name="assistant_owner",
-                human_input_mode="ALWAYS",
-            )
-
-        if harness_config and harness_config.context.enabled:
-            _register_context_transforms(agents["assistant"], harness_config.context)
-
-        setup_single_handoffs(agents)
-        return agents
-
-    # ---- Swarm mode (default) ----
-    agents = {
-        "pm": create_pm_agent(llm_config, mcp_manager, harness_config),
-        "planner": create_planner_agent(llm_config, mcp_manager, skill_registry, harness_config),
-        "generator": create_generator_agent(
-            llm_config, mcp_manager, skill_registry, harness_config,
-        ),
-        "evaluator": create_evaluator_agent(llm_config, mcp_manager, skill_registry, harness_config),
-    }
-
-    # ---- HITL proxies ----
-    if hitl_mode == "email" and smtp_config and imap_config and role_emails:
-        proxies = create_email_channel_proxies(
-            smtp_config, imap_config, hitl_cfg, role_emails,
-        )
-        agents.update(proxies)
-        logger.info("Created %d email proxy agents", len(proxies))
-
-    elif hitl_mode == "dingtalk" and dingtalk_config and role_dingtalk_ids:
-        proxies = create_dingtalk_channel_proxies(
-            dingtalk_config, hitl_cfg, role_dingtalk_ids,
-        )
-        agents.update(proxies)
-        logger.info("Created %d DingTalk proxy agents", len(proxies))
-
-    else:
-        for owner_key, description in ROLE_DESCRIPTIONS.items():
-            agents[owner_key] = ConversableAgent(
-                name=owner_key,
-                human_input_mode="ALWAYS",
-                system_message=description,
-            )
-
-    # Register context compression transforms (Level 1 + Level 4)
-    # Only for AI agents, not for proxies
-    _ai_agent_keys = {"pm", "planner", "generator", "evaluator"}
-    if harness_config and harness_config.context.enabled:
-        for key in _ai_agent_keys:
-            _register_context_transforms(agents[key], harness_config.context)
-
-    setup_handoffs(agents)
-    return agents

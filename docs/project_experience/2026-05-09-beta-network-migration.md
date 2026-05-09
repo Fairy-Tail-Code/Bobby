@@ -100,3 +100,17 @@
 2. 在当前 `ag2==0.11.5` 上，最稳妥的落地方式是使用 `Agent + response_schema + MemoryStream + middleware`，而不是等待文档里更前沿的 beta 模块全部进入 pip 版本。
 3. 迁移时不要一次性推翻 single 模式。先把多 agent 主链路切到 network runtime，风险会明显更可控。
 
+## 后续清理
+
+完成主链路迁移后，又补做了一轮“旧实现清场”，避免主仓库同时保留两套专家模式：
+
+- 删除 `orchestration/group.py`
+- 删除 `agents/user.py`
+- `agents/factory.py` 只保留 single 模式需要的 `create_single_agent / setup_single_handoffs / context transform`
+- `infrastructure/agent_pool.py` 只保留 single 模式模板池，不再维护 swarm templates
+- `infrastructure/session/swarm_session.py` 删除旧的 `_create_swarm_agents()` 分支
+- `main.py` 不再直接组装 `create_all_agents + arun_swarm`，改为复用 `SessionManager`
+- 四个专家角色 prompt 删除对 `transfer_to_*` / handoff tool 的依赖性描述
+
+这一步的目标不是“再做一次迁移”，而是把迁移后已经没有任何调用方的旧群聊实现彻底移除，避免后续维护时误判当前真实链路。
+

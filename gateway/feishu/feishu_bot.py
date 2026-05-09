@@ -10,14 +10,7 @@ import logging
 import os
 import re
 import threading
-from typing import Callable, Awaitable
-
-import lark_oapi as lark
-from lark_oapi.api.im.v1 import (
-    CreateMessageRequest,
-    CreateMessageRequestBody,
-)
-from lark_oapi.core.const import FEISHU_DOMAIN, LARK_DOMAIN
+from typing import Callable, Awaitable, Any
 
 logger = logging.getLogger(__name__)
 
@@ -45,8 +38,8 @@ class FeishuBotService:
         self._domain = domain if domain == "lark" else "feishu"
         self._on_message = on_message
         self._main_loop: asyncio.AbstractEventLoop | None = None
-        self._lark_client: lark.Client | None = None
-        self._ws_client: lark.ws.Client | None = None
+        self._lark_client: Any | None = None
+        self._ws_client: Any | None = None
         self._ws_thread: threading.Thread | None = None
         self._ws_loop: asyncio.AbstractEventLoop | None = None
         self._started = False
@@ -72,6 +65,10 @@ class FeishuBotService:
 
     def start(self) -> None:
         """Initialize lark client and start WS listener thread."""
+        # 懒加载
+        import lark_oapi as lark
+        from lark_oapi.core.const import FEISHU_DOMAIN, LARK_DOMAIN
+
         if self._started:
             return
         self._started = True
@@ -225,6 +222,11 @@ class FeishuBotService:
         await self._send_message(chat_id, "post", content)
 
     async def _send_message(self, chat_id: str, msg_type: str, content: str) -> None:
+        from lark_oapi.api.im.v1 import (
+            CreateMessageRequest,
+            CreateMessageRequestBody,
+        )
+
         if not self._lark_client:
             raise RuntimeError("FeishuBotService not started")
 

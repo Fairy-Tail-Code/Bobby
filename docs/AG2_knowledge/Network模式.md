@@ -119,3 +119,21 @@ beta network 路径：
 4. runtime 必须显式校验 `next_step`，否则 beta network 很容易退化成“模型想交给谁就交给谁”。
 5. 如果官方文档里的 beta 模块尚未进入当前 pip 版本，优先使用当前版本已经稳定暴露的 beta 基元完成概念迁移。
 
+## 迁移完成后的代码治理
+
+迁移到 beta network 后，最好不要长期保留旧专家模式的群聊实现作为“备用路径”。经验上应该继续做第二步清理：
+
+1. 删除旧的 `orchestration/group.py`
+2. 删除只为旧 swarm handoff 服务的工厂函数和代理创建函数
+3. 删除 `AgentPool` 中针对 swarm `ConversableAgent` 的模板逻辑
+4. 清理入口文件里仍直接调用旧 group chat API 的路径
+5. 清理 prompt 中对 `transfer_to_*`、handoff tool、`terminate_command` 的旧描述
+
+否则很容易出现一种危险状态：
+
+- 运行时已经走 beta network
+- 代码库里却仍残留一整套旧 group chat 实现
+- 新人难以判断“到底哪条链路是真正在跑的”
+
+这类“迁移已完成但旧实现未退场”的状态，会显著增加维护成本和误修风险。
+

@@ -2,26 +2,24 @@
 from __future__ import annotations
 
 import asyncio
-import json
 import logging
-import os
 import sys
-from datetime import datetime
-from pathlib import Path
 
 from config.config import (
-    load_llm_config, load_mcp_config, load_harness_config,
-    load_smtp_config, load_imap_config, load_role_emails,
-    load_dingtalk_config, load_role_dingtalk_ids,
+    load_llm_config,
+    load_mcp_config,
+    load_harness_config,
     load_knowledge_config,
 )
 from infrastructure.mcp.manager import create_mcp_manager
 from utils.paths import (
     get_config_dir, get_session_dir, get_system_skills_dir, get_user_skills_dir,
 )
+from fronted.frontend_cli import CLIFrontend, print_info
+from infrastructure.agent_pool import AgentPool
+from infrastructure.channel.channel_cli import CLIChannel
+from infrastructure.session.session_manager import SessionManager
 from infrastructure.skills.registry import SkillRegistry
-from agents.factory import create_all_agents
-from orchestration.group import arun_swarm
 
 logging.basicConfig(
     level=logging.INFO,
@@ -29,34 +27,20 @@ logging.basicConfig(
 )
 logger = logging.getLogger(__name__)
 
-# 获取session_file
-session_dir = str(get_session_dir())
-timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
-session_file = os.path.join(session_dir, f"chat_history_{timestamp}.json")
-
 
 async def run(prompt: str) -> None:
-    """运行测试工具，传入用户提示词启动完整流程"""
-    # 加载配置：从环境变量加载大模型配置
-    logger.info("Loading LLM config from .env")
+    """Run one CLI session using the current session manager/runtime stack."""
     llm_config = load_llm_config()
-
-    # 加载 MCP 服务配置和测试工具配置
-    logger.info("Loading MCP and harness config")
     mcp_config = load_mcp_config()
     harness_config = load_harness_config()
 
-    # 初始化技能注册器，扫描技能目录
     skill_registry = SkillRegistry(roots=[get_system_skills_dir(), get_user_skills_dir()])
     available_skills = skill_registry.list_skills()
     logger.info("Available skills: %s", [s.name for s in available_skills])
 
-    # 连接所有配置的 MCP 服务器（用于工具调用/外部服务）
     logger.info("Connecting to MCP servers...")
     async with create_mcp_manager(mcp_config) as mcp_manager:
         connected_servers = mcp_manager.list_servers()
-
-        # 校验技能与 MCP 服务的匹配性：技能需要的服务是否已连接
         skill_registry.connected_servers = connected_servers
         alignment_issues = skill_registry.validate_alignment()
         if alignment_issues:
@@ -66,129 +50,49 @@ async def run(prompt: str) -> None:
                     issue.skill_name, issue.missing_servers, issue.missing_servers,
                 )
 
-        # 根据HITL模式加载对应通道配置
-        smtp_config = None
-        imap_config = None
-        role_emails = None
-        dingtalk_config = None
-        role_dingtalk_ids = None
+        agent_pool = AgentPool(
+            llm_config=llm_config,
+            mcp_manager=mcp_manager,
+            skill_registry=skill_registry,
+            harness_config=harness_config,
+        )
+        agent_pool.initialize()
 
-        if harness_config.hitl.mode == "email":
-            smtp_config = load_smtp_config()
-            imap_config = load_imap_config()
-            role_emails = load_role_emails()
-            logger.info("HITL mode: email (SMTP=%s)", smtp_config.host)
-        elif harness_config.hitl.mode == "dingtalk":
-            dingtalk_config = load_dingtalk_config()
-            role_dingtalk_ids = load_role_dingtalk_ids()
-            logger.info("HITL mode: dingtalk (client_id=%s)", dingtalk_config.client_id[:6] + "..." if dingtalk_config.client_id else "N/A")
-        elif harness_config.hitl.mode == "gateway":
-            logger.info(
-                "HITL mode: gateway (platforms=%s; local CLI owners will be used for harness run)",
-                harness_config.hitl.gateways or ["feishu"],
-            )
-
-        # 创建所有智能体：包含技能、转接逻辑、人工代理（如需）
-        logger.info("Creating agents (mode=%s)...", harness_config.mode)
-
-        agents_dict = create_all_agents(
-            llm_config, mcp_manager, skill_registry, harness_config,
-            smtp_config=smtp_config,
-            imap_config=imap_config,
-            role_emails=role_emails,
-            dingtalk_config=dingtalk_config,
-            role_dingtalk_ids=role_dingtalk_ids,
+        frontend = CLIFrontend()
+        session_manager = SessionManager(
+            frontend=frontend,
+            mcp_manager=mcp_manager,
+            llm_config=llm_config,
+            harness_config=harness_config,
+            skill_registry=skill_registry,
+            session_dir=str(get_session_dir()),
+            agent_pool=agent_pool,
+            channel_factory=lambda chat_id: CLIChannel(),
+            hitl_mode="cli",
         )
 
-        # 构建智能体列表
-        if harness_config.mode == "single":
-            agents_list = [agents_dict["assistant"]]
-            if "assistant_owner" in agents_dict:
-                agents_list.append(agents_dict["assistant_owner"])
-        else:
-            agents_list = [
-                agents_dict["planner"],
-                agents_dict["generator"],
-                agents_dict["evaluator"],
-                agents_dict["pm"],
-            ]
-            for key in ("pm_owner", "planner_owner", "generator_owner", "evaluator_owner"):
-                if key in agents_dict:
-                    agents_list.append(agents_dict[key])
+        chat_id = "cli"
+        open_id = "user"
+        chat_type = "p2p"
 
-        # 启动多智能体群聊（Swarm），设置初始发言智能体、最大轮数等
-        logger.info(
-            "Starting swarm chat (max %d rounds) with prompt: %s",
-            harness_config.max_rounds,
-            prompt[:100],  # 只打印前100字符避免日志过长
-        )
-        # arun_swarm开始循环
-        initial_agent = agents_dict.get("assistant") or agents_dict["pm"]
-        chat_result, context, last_speaker,manager = await arun_swarm(
-            initial_agent=initial_agent,
-            agents=agents_list,  # 参与群聊的所有智能体
-            prompt=prompt,  # 用户输入提示词
-            harness_config=harness_config,  # 配置
+        print_info(f"OpenHarness run ready (mode={harness_config.mode}, MCP servers={connected_servers})")
+        await session_manager.handle_message(chat_id, open_id, chat_type, prompt)
 
-        )
-
-        # 保存session
-        with open(session_file, "w", encoding="utf-8") as f:
-            json.dump(chat_result.chat_history, f, ensure_ascii=False, indent=2)
-
-        logger.info("Session saved.")
-
-        # 群聊执行完成，输出最后发言智能体
-
-        # todo 加入session resume功能
-        logger.info("Swarm completed. Last speaker: %s", last_speaker.name)
-
-        # === 知识收集与同步 ===
-        knowledge_config = harness_config.knowledge
-        if knowledge_config and knowledge_config.enabled:
+        session = session_manager._sessions.get(chat_id)
+        if session and session.is_running:
             try:
-                from infrastructure.knowledge.collector import ExperienceCollector
-                from infrastructure.knowledge.local_store import LocalKnowledgeStore
-                from infrastructure.knowledge.sync_client import KnowledgeSyncClient
-                from infrastructure.knowledge.formatter import write_pulled_experiences
-
-                collector = ExperienceCollector(llm_config.generator, knowledge_config)
-                experiences = await collector.collect_from_session(
-                    chat_history=chat_result.chat_history,
-                    session_metadata={
-                        "prompt": prompt,
-                        "mode": harness_config.mode,
-                        "session_id": timestamp,
-                        "project_type": "+".join(harness_config.tech_stack.values()) if harness_config.tech_stack else None,
-                    },
-                )
-
-                if experiences:
-                    local_store = LocalKnowledgeStore(knowledge_config.local_store_path)
-                    async with local_store:
-                        enqueued = await local_store.enqueue(experiences)
-                        logger.info("Enqueued %d experiences for sync", enqueued)
-
-                        # Try immediate sync
-                        sync_client = KnowledgeSyncClient(knowledge_config)
-                        if await sync_client.health_check():
-                            result = await sync_client.sync_with_server(local_store)
-                            logger.info("Sync result: pushed=%d, pulled=%d, errors=%d",
-                                        result["pushed"], result["pulled"], result["errors"])
-
-                            # Integrate pulled experiences
-                            if knowledge_config.pull_enabled and result["pulled"] > 0:
-                                pull_resp = await sync_client.pull()
-                                if pull_resp and pull_resp.get("experiences"):
-                                    written = write_pulled_experiences(
-                                        pull_resp["experiences"],
-                                        str(Path(knowledge_config.collected_dir) / "shared"),
-                                    )
-                                    logger.info("Wrote %d shared experiences to local memory", written)
-                        else:
-                            logger.info("Knowledge server unreachable; %d experiences queued locally", enqueued)
-            except Exception:
-                logger.exception("Knowledge collection/sync failed, continuing...")
+                while session.is_running:
+                    channel = getattr(session, "_channel", None)
+                    if channel is not None:
+                        pending_id = channel.get_any_pending_request_id()
+                        if pending_id is not None:
+                            reply = input()
+                            channel.inject_reply(pending_id, reply)
+                            continue
+                    await asyncio.sleep(0.3)
+            except KeyboardInterrupt:
+                session_manager.terminate_all()
+                raise
 
 
 def main() -> None:

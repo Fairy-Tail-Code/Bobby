@@ -1,10 +1,9 @@
-"""Agent template pool — pre-create agents at startup, clone on demand.
+"""Agent template pool for legacy single-agent mode.
 
-Instead of creating ConversableAgent + registering MCP tools + injecting skills
-on every incoming message, we do all that work once at startup and store
-immutable "template" agents.  When a new session needs agents, we *clone*
-from templates — the only per-session work is resetting mutable state
-(chat_messages, counters) and wiring handoffs to the correct peer agents.
+The multi-agent expert mode now runs on AG2 beta network agents and no longer
+uses ConversableAgent template cloning. We keep this pool only for single mode
+so repeated CLI/gateway sessions do not have to rebuild the assistant agent
+and its registered tools every time.
 
 Why not deepcopy?
     AG2 agents hold OpenAI client objects with _thread.RLock which can't be
@@ -29,10 +28,6 @@ from config.config import HarnessConfig, LlmConfig
 from infrastructure.mcp.manager import McpManager
 from infrastructure.skills.registry import SkillRegistry
 from agents.factory import (
-    create_pm_agent,
-    create_planner_agent,
-    create_generator_agent,
-    create_evaluator_agent,
     create_single_agent,
     _register_context_transforms,
 )
@@ -120,8 +115,6 @@ class AgentPool:
         pool.initialize()          # creates & registers all templates
 
         # On each incoming message:
-        agents = pool.acquire_swarm_agents()   # returns {key: ConversableAgent}
-        # ... or
         agents = pool.acquire_single_agents()
     """
 
@@ -138,7 +131,6 @@ class AgentPool:
         self._harness_config = harness_config
 
         # Template agents — populated by initialize(), never mutated after
-        self._swarm_templates: dict[str, ConversableAgent] = {}
         self._single_templates: dict[str, ConversableAgent] = {}
         self._initialized = False
 
@@ -157,29 +149,6 @@ class AgentPool:
 
         logger.info("Initializing agent pool — creating templates...")
 
-        # --- Swarm mode templates ---
-        self._swarm_templates = {
-            "pm": create_pm_agent(
-                self._llm_config, self._mcp_manager, self._harness_config,
-            ),
-            "planner": create_planner_agent(
-                self._llm_config, self._mcp_manager, self._skill_registry, self._harness_config,
-            ),
-            "generator": create_generator_agent(
-                self._llm_config, self._mcp_manager, self._skill_registry, self._harness_config,
-            ),
-            "evaluator": create_evaluator_agent(
-                self._llm_config, self._mcp_manager, self._skill_registry, self._harness_config,
-            ),
-        }
-
-        # Context transforms on swarm templates
-        if self._harness_config and self._harness_config.context.enabled:
-            for key in ("pm", "planner", "generator", "evaluator"):
-                _register_context_transforms(
-                    self._swarm_templates[key], self._harness_config.context,
-                )
-
         # --- Single mode template ---
         self._single_templates = {
             "assistant": create_single_agent(
@@ -194,20 +163,6 @@ class AgentPool:
 
         self._initialized = True
         self._log_template_summary()
-
-    def acquire_swarm_agents(self) -> dict[str, ConversableAgent]:
-        """Clone all swarm-mode templates into independent session agents.
-
-        Returns a dict of fresh ConversableAgent instances keyed by role.
-        handoffs are NOT set here — the caller must call setup_handoffs()
-        with the actual agent instances.
-        """
-        self._ensure_initialized()
-        agents = {}
-        for key, template in self._swarm_templates.items():
-            agents[key] = _clone_agent(template)
-            logger.debug("Cloned swarm agent '%s' from template", key)
-        return agents
 
     def acquire_single_agents(self) -> dict[str, ConversableAgent]:
         """Clone single-mode templates into independent session agents."""
@@ -226,14 +181,10 @@ class AgentPool:
 
     def _log_template_summary(self) -> None:
         """Log what was registered for debugging."""
-        for mode, templates in [
-            ("swarm", self._swarm_templates),
-            ("single", self._single_templates),
-        ]:
-            for key, agent in templates.items():
-                func_count = len(agent._function_map)
-                tools_in_config = len(agent.llm_config.get("tools", []))
-                logger.info(
-                    "  [%s] template '%s': %d functions, %d tool schemas",
-                    mode, key, func_count, tools_in_config,
-                )
+        for key, agent in self._single_templates.items():
+            func_count = len(agent._function_map)
+            tools_in_config = len(agent.llm_config.get("tools", []))
+            logger.info(
+                "  [single] template '%s': %d functions, %d tool schemas",
+                key, func_count, tools_in_config,
+            )

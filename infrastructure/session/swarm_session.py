@@ -25,16 +25,11 @@ from autogen.events.agent_events import (
 from autogen.events.client_events import StreamEvent
 
 from agents.factory import (
-    create_pm_agent,
-    create_planner_agent,
-    create_generator_agent,
-    create_evaluator_agent,
     create_single_agent,
-    setup_handoffs,
     setup_single_handoffs,
     _register_context_transforms,
 )
-from agents.channel_proxy import ChannelUserProxyAgent, ROLE_DESCRIPTIONS
+from agents.channel_proxy import ChannelUserProxyAgent
 from infrastructure.channel.channel import ChannelAdapter
 from config.config import HarnessConfig, LlmConfig
 from fronted.frontend import Frontend
@@ -440,14 +435,6 @@ class SwarmSession:
         except Exception:
             logger.exception("Automatic memory extraction failed (chat_id=%s)", self.chat_id)
 
-    # ---------------------------------------------------- agent creation
-
-    def _create_agents(self) -> dict[str, ConversableAgent]:
-        """Create all agents for this session — from pool if available."""
-        if self._mode == "single":
-            return self._create_single_agents()
-        return self._create_swarm_agents()
-
     def _create_single_agents(self) -> dict[str, ConversableAgent]:
         """Create agents for single mode: one Assistant + one owner proxy."""
         # Use pool if available, otherwise fall back to direct creation
@@ -483,48 +470,6 @@ class SwarmSession:
 
         setup_single_handoffs(agents)
         return agents
-
-    def _create_swarm_agents(self) -> dict[str, ConversableAgent]:
-        """Create agents for swarm mode (PM, Planner, Generator, Evaluator)."""
-        # Use pool if available, otherwise fall back to direct creation
-        if self._agent_pool:
-            agents = self._agent_pool.acquire_swarm_agents()
-        else:
-            agents: dict[str, ConversableAgent] = {
-                "pm": create_pm_agent(self._llm_config, self._mcp_manager, self._harness_config),
-                "planner": create_planner_agent(
-                    self._llm_config, self._mcp_manager, self._skill_registry, self._harness_config,
-                ),
-                "generator": create_generator_agent(
-                    self._llm_config, self._mcp_manager, self._skill_registry, self._harness_config,
-                ),
-                "evaluator": create_evaluator_agent(
-                    self._llm_config, self._mcp_manager, self._skill_registry, self._harness_config,
-                ),
-            }
-
-        # Create per-role channel proxies using the shared channel
-        hitl_cfg = self._harness_config.hitl
-        for role_key, description in ROLE_DESCRIPTIONS.items():
-            proxy = ChannelUserProxyAgent(
-                name=role_key,
-                channel=self._channel,
-                recipient=self.chat_id,
-                role_description=description,
-                timeout=hitl_cfg.timeout,
-                polling_interval=hitl_cfg.polling_interval,
-            )
-            agents[role_key] = proxy
-            self._channel_proxies[role_key] = proxy
-
-        # Context transforms: only needed when NOT using pool
-        if not self._agent_pool and self._harness_config.context.enabled:
-            for key in ("pm", "planner", "generator", "evaluator"):
-                _register_context_transforms(agents[key], self._harness_config.context)
-
-        setup_handoffs(agents)
-        return agents
-
     # --------------------------------------------------- reply injection
 
     async def inject_reply(self, text: str) -> bool:

@@ -6,17 +6,6 @@ import logging
 import uuid
 from typing import Any, Awaitable, Callable, Coroutine
 
-from gateway.weixin.weixin_onboard import (
-    AIOHTTP_AVAILABLE,
-    ILINK_BASE_URL,
-    MESSAGE_DEDUP_TTL_SECONDS,
-    check_weixin_requirements,
-    extract_text,
-    get_updates,
-    guess_chat_type,
-    send_text_message,
-)
-
 try:
     import aiohttp
 except ImportError:  # pragma: no cover - dependency gate
@@ -36,11 +25,11 @@ class WeixinBotService:
         token: str,
         on_message: Callable[[str, str, str, str], Awaitable[None]],
         *,
-        base_url: str = ILINK_BASE_URL,
+        base_url: str | None = None,
     ) -> None:
         self._account_id = account_id
         self._token = token
-        self._base_url = base_url.rstrip("/")
+        self._base_url = base_url
         self._on_message = on_message
         self._main_loop: asyncio.AbstractEventLoop | None = None
         self._poll_task: asyncio.Task[None] | None = None
@@ -54,12 +43,21 @@ class WeixinBotService:
         self._main_loop = loop
 
     def start(self) -> None:
+        # 懒加载
+        from gateway.weixin.weixin_onboard import (
+            check_weixin_requirements,
+            ILINK_BASE_URL,
+        )
+
         if self._started:
             return
         if not check_weixin_requirements():
             raise RuntimeError("Weixin runtime requires aiohttp")
         if self._main_loop is None:
             raise RuntimeError("Main event loop not set")
+        if self._base_url is None:
+            self._base_url = ILINK_BASE_URL
+        self._base_url = self._base_url.rstrip("/")
         self._started = True
         self._poll_task = self._main_loop.create_task(self._poll_loop())
         logger.info("WeixinBotService polling started")
@@ -94,6 +92,8 @@ class WeixinBotService:
             await self._send_text_chunk(chat_id, chunk)
 
     async def _send_text_chunk(self, chat_id: str, text: str) -> None:
+        from gateway.weixin.weixin_onboard import send_text_message
+
         if not self._session:
             raise RuntimeError("WeixinBotService not started")
         context_token = self._context_tokens.get(chat_id)
@@ -135,6 +135,11 @@ class WeixinBotService:
         await self.send_text(chat_id, f"🔧 【{agent_name}】正在执行工具：{tool_name}")
 
     async def _poll_loop(self) -> None:
+        from gateway.weixin.weixin_onboard import (
+            AIOHTTP_AVAILABLE,
+            get_updates,
+        )
+
         if not AIOHTTP_AVAILABLE or aiohttp is None:
             return
         try:
@@ -160,6 +165,8 @@ class WeixinBotService:
             self._session = None
 
     async def _handle_message(self, message: dict) -> None:
+        from gateway.weixin.weixin_onboard import extract_text, guess_chat_type
+
         sender_id = str(message.get("from_user_id") or "").strip()
         if not sender_id or sender_id == self._account_id:
             return
@@ -195,6 +202,8 @@ class WeixinBotService:
         await self._on_message(chat_id, sender_id, chat_type, text)
 
     def _prune_recent_messages(self) -> None:
+        from gateway.weixin.weixin_onboard import MESSAGE_DEDUP_TTL_SECONDS
+
         now = asyncio.get_running_loop().time()
         expired = [
             key for key, timestamp in self._recent_message_ids.items()

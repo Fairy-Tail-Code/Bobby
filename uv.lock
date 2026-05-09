@@ -35,7 +35,7 @@ openai = [
 
 [[package]]
 name = "ag2-openharness"
-version = "0.1.0"
+version = "0.1.1"
 source = { editable = "." }
 dependencies = [
     { name = "ag2", extra = ["openai"] },
@@ -47,7 +47,7 @@ dependencies = [
     { name = "fastapi" },
     { name = "filelock" },
     { name = "lark-oapi" },
-    { name = "mcp" },
+    { name = "mcp", extra = ["cli"] },
     { name = "pip" },
     { name = "playwright" },
     { name = "pyproject" },
@@ -68,7 +68,7 @@ requires-dist = [
     { name = "fastapi", specifier = ">=0.115.0" },
     { name = "filelock", specifier = ">=3.29.0" },
     { name = "lark-oapi", specifier = ">=1.5.3" },
-    { name = "mcp", specifier = ">=1.27.0" },
+    { name = "mcp", extras = ["cli"], specifier = ">=1.27.0" },
     { name = "pip", specifier = ">=26.0.1" },
     { name = "playwright", specifier = ">=1.58.0" },
     { name = "pyproject", specifier = ">=1!0.1.2" },
@@ -870,6 +870,12 @@ dependencies = [
 sdist = { url = "https://files.pythonhosted.org/packages/8b/eb/c0cfc62075dc6e1ec1c64d352ae09ac051d9334311ed226f1f425312848a/mcp-1.27.0.tar.gz", hash = "sha256:d3dc35a7eec0d458c1da4976a48f982097ddaab87e278c5511d5a4a56e852b83", size = 607509, upload-time = "2026-04-02T14:48:08.88Z" }
 wheels = [
     { url = "https://files.pythonhosted.org/packages/9c/46/f6b4ad632c67ef35209a66127e4bddc95759649dd595f71f13fba11bdf9a/mcp-1.27.0-py3-none-any.whl", hash = "sha256:5ce1fa81614958e267b21fb2aa34e0aea8e2c6ede60d52aba45fd47246b4d741", size = 215967, upload-time = "2026-04-02T14:48:07.24Z" },
+]
+
+[package.optional-dependencies]
+cli = [
+    { name = "python-dotenv" },
+    { name = "typer" },
 ]
 
 [[package]]

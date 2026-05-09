@@ -5,6 +5,7 @@ Usage:
 """
 from __future__ import annotations
 
+
 import asyncio
 import logging
 import signal
@@ -16,6 +17,7 @@ from config.config import (
     load_weixin_config,
     ConfigError,
 )
+
 from config.cron_config import load_cron_config
 from gateway.feishu.feishu_bot import FeishuBotService
 from gateway.feishu.channel_feishu_service import ChannelFeishuService
@@ -28,12 +30,14 @@ from infrastructure.mcp_servers.agent_cron_server import set_task_scheduler
 from utils.paths import (
     get_session_dir, get_system_skills_dir, get_user_skills_dir,
 )
+
 from infrastructure.session.session_manager import SessionManager
 from infrastructure.skills.registry import SkillRegistry
 
 logging.basicConfig(
     level=logging.INFO,
     format="%(asctime)s [%(name)s] %(levelname)s: %(message)s",
+    force=True,
 )
 logger = logging.getLogger(__name__)
 
@@ -152,7 +156,7 @@ async def main() -> None:
         logger.info("Connecting to MCP servers...")
         async with create_mcp_manager(mcp_config) as mcp_manager:
             connected_servers = mcp_manager.list_servers()
-
+            # todo mcp改为懒加载，不然加载太慢了
             # 检查是否有 skill缺少必要的 MCP 工具。
             skill_registry.connected_servers = connected_servers
             for issue in skill_registry.validate_alignment():
