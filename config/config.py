@@ -154,8 +154,16 @@ class KnowledgeConfig:
 
 
 @dataclass
+class MemoryConfig:
+    enabled: bool = True
+    dir: str = "memory"
+    max_index_lines: int = 200
+    max_index_bytes: int = 25_000
+
+
+@dataclass
 class HarnessConfig:
-    mode: str = "swarm"  # "swarm" | "single"
+    mode: str = "single"  # "swarm" | "single"
     max_rounds: int = 15
     score_threshold: int = 7
     dimensions: list[EvaluationDimension] = field(default_factory=list)
@@ -164,6 +172,7 @@ class HarnessConfig:
     hitl: HitlConfig = field(default_factory=HitlConfig)
     acpx: ClaudeCodeConfig = field(default_factory=ClaudeCodeConfig)
     knowledge: KnowledgeConfig = field(default_factory=KnowledgeConfig)
+    memory: MemoryConfig = field(default_factory=MemoryConfig)
 
 
 def _load_yaml(path: Path) -> dict:
@@ -267,8 +276,9 @@ def load_harness_config() -> HarnessConfig:
         timeout=hitl_raw.get("timeout", 3600),
         subject_prefix=hitl_raw.get("subject_prefix", "[OpenHarness]"),
     )
+    memory_raw = raw.get("memory", {})
     return HarnessConfig(
-        mode=raw.get("mode", "swarm"),
+        mode=raw.get("mode", "single"),
         max_rounds=ctx_raw["max_rounds"],
         score_threshold=eval_cfg["score_threshold"],
         dimensions=dimensions,
@@ -281,6 +291,12 @@ def load_harness_config() -> HarnessConfig:
             max_retries=acpx_raw.get("max_retries", 2),
         ) if (acpx_raw := raw.get("acpx", {})) else ClaudeCodeConfig(),
         knowledge=load_knowledge_config(),
+        memory=MemoryConfig(
+            enabled=memory_raw.get("enabled", True),
+            dir=memory_raw.get("dir", "memory"),
+            max_index_lines=memory_raw.get("max_index_lines", 200),
+            max_index_bytes=memory_raw.get("max_index_bytes", 25_000),
+        ),
     )
 
 

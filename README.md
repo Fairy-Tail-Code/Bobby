@@ -171,9 +171,14 @@ harness:
     gateways: []            # 仅 mode=gateway 时生效，例如 [feishu, weixin]
   acpx:
     model: sonnet           # Claude Code 委托模式
+  memory:
+    enabled: true
+    dir: memory             # 相对 OPENHARNESS_HOME，默认 ~/.openharness/memory
 ```
 
 `harness setup` 里选择 `messaging gateway` 后，可以在终端勾选 `feishu`、`weixin` 中的一个或多个平台。扫码成功后会直接写回 `.env`，`harness server start` 会同时启动所有已勾选 gateway，并把两边消息汇入同一个 `SessionManager`。
+
+记忆系统会把 `MEMORY.md` 索引自动注入到各角色的 system prompt 中，并为 agent 注册 `load_memory` / `save_memory` 工具。适合保存用户偏好、行为反馈、项目决策、外部系统引用这类无法从代码和 git 直接推导的信息。
 
 ### mcp.yaml
 

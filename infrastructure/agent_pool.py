@@ -159,15 +159,17 @@ class AgentPool:
 
         # --- Swarm mode templates ---
         self._swarm_templates = {
-            "pm": create_pm_agent(self._llm_config, self._mcp_manager),
+            "pm": create_pm_agent(
+                self._llm_config, self._mcp_manager, self._harness_config,
+            ),
             "planner": create_planner_agent(
-                self._llm_config, self._mcp_manager, self._skill_registry,
+                self._llm_config, self._mcp_manager, self._skill_registry, self._harness_config,
             ),
             "generator": create_generator_agent(
-                self._llm_config, self._mcp_manager, self._skill_registry,
+                self._llm_config, self._mcp_manager, self._skill_registry, self._harness_config,
             ),
             "evaluator": create_evaluator_agent(
-                self._llm_config, self._mcp_manager, self._skill_registry,
+                self._llm_config, self._mcp_manager, self._skill_registry, self._harness_config,
             ),
         }
 
@@ -181,7 +183,7 @@ class AgentPool:
         # --- Single mode template ---
         self._single_templates = {
             "assistant": create_single_agent(
-                self._llm_config, self._mcp_manager, self._skill_registry,
+                self._llm_config, self._mcp_manager, self._skill_registry, self._harness_config,
             ),
         }
 

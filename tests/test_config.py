@@ -193,6 +193,11 @@ harness:
     max_tokens: 80000
     auto_compact_enabled: true
     max_rounds: 15
+  memory:
+    enabled: true
+    dir: project-memory
+    max_index_lines: 180
+    max_index_bytes: 24000
 """.strip(),
             encoding="utf-8",
         )
@@ -204,6 +209,10 @@ harness:
         assert len(config.dimensions) == 4
         assert config.tech_stack["frontend"] == "react+vite"
         assert config.context.enabled is True
+        assert config.memory.enabled is True
+        assert config.memory.dir == "project-memory"
+        assert config.memory.max_index_lines == 180
+        assert config.memory.max_index_bytes == 24000
 
 
 def test_load_knowledge_config_uses_openharness_home_paths(monkeypatch) -> None:

@@ -49,3 +49,9 @@ harness:
     offline_enabled: true
     pull_enabled: true
     pull_categories: []
+
+  memory:
+    enabled: true
+    dir: "memory"
+    max_index_lines: 200
+    max_index_bytes: 25000

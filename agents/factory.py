@@ -28,6 +28,8 @@ from infrastructure.context.auto_compact import AutoCompactTransform
 from infrastructure.context.snip import create_snip_transform
 from infrastructure.mcp.manager import McpManager
 from infrastructure.mcp.tool_bridge import register_tools_for_agent
+from infrastructure.memory.injection import inject_memory_block
+from infrastructure.memory.tool import register_memory_tools
 from infrastructure.skills.registry import SkillRegistry
 from infrastructure.skills.tool import register_load_skill_tool
 from infrastructure.skills.skill_inject import inject_skill_summaries
@@ -92,11 +94,15 @@ def _register_context_transforms(
 def create_pm_agent(
     llm_config: LlmConfig,
     mcp_manager: McpManager | None = None,
+    harness_config: HarnessConfig | None = None,
 ) -> ConversableAgent:
     """Create a PM agent with basic MCP tools (workspace, shell)."""
     agent = create_pm(llm_config)
     if mcp_manager:
         register_tools_for_agent(agent, mcp_manager, _get_skill_assignment().mcp_servers.get("pm", []))
+    if harness_config and harness_config.memory.enabled:
+        inject_memory_block(agent, harness_config.memory)
+        register_memory_tools(agent, harness_config.memory)
     return agent
 
 
@@ -104,6 +110,7 @@ def create_planner_agent(
     llm_config: LlmConfig,
     mcp_manager: McpManager | None = None,
     skill_registry: SkillRegistry | None = None,
+    harness_config: HarnessConfig | None = None,
 ) -> ConversableAgent:
     """Create a Planner agent with analysis skills."""
     agent = create_planner(llm_config)
@@ -113,6 +120,9 @@ def create_planner_agent(
     if skill_registry:
         inject_skill_summaries(agent, sa.skills.get("planner", []), skill_registry)
         register_load_skill_tool(agent, skill_registry, sa.skills.get("planner", []))
+    if harness_config and harness_config.memory.enabled:
+        inject_memory_block(agent, harness_config.memory)
+        register_memory_tools(agent, harness_config.memory)
     return agent
 
 
@@ -120,6 +130,7 @@ def create_generator_agent(
     llm_config: LlmConfig,
     mcp_manager: McpManager,
     skill_registry: SkillRegistry | None = None,
+    harness_config: HarnessConfig | None = None,
 ) -> ConversableAgent:
     """Create a Generator agent with MCP tools and build skills."""
     agent = create_generator(llm_config)
@@ -128,6 +139,9 @@ def create_generator_agent(
     if skill_registry:
         inject_skill_summaries(agent, sa.skills.get("generator", []), skill_registry)
         register_load_skill_tool(agent, skill_registry, sa.skills.get("generator", []))
+    if harness_config and harness_config.memory.enabled:
+        inject_memory_block(agent, harness_config.memory)
+        register_memory_tools(agent, harness_config.memory)
     return agent
 
 
@@ -135,6 +149,7 @@ def create_evaluator_agent(
     llm_config: LlmConfig,
     mcp_manager: McpManager,
     skill_registry: SkillRegistry | None = None,
+    harness_config: HarnessConfig | None = None,
 ) -> ConversableAgent:
     """Create an Evaluator agent with browser/shell tools and testing skills."""
     agent = create_evaluator(llm_config)
@@ -143,12 +158,16 @@ def create_evaluator_agent(
     if skill_registry:
         inject_skill_summaries(agent, sa.skills.get("evaluator", []), skill_registry)
         register_load_skill_tool(agent, skill_registry, sa.skills.get("evaluator", []))
+    if harness_config and harness_config.memory.enabled:
+        inject_memory_block(agent, harness_config.memory)
+        register_memory_tools(agent, harness_config.memory)
     return agent
 
 def create_single_agent(
     llm_config: LlmConfig,
     mcp_manager: McpManager,
     skill_registry: SkillRegistry | None = None,
+    harness_config: HarnessConfig | None = None,
 ) -> ConversableAgent:
     """Create the all-in-one Assistant agent for single mode."""
     agent = create_single(llm_config)
@@ -157,6 +176,9 @@ def create_single_agent(
     if skill_registry:
         inject_skill_summaries(agent, sa.skills.get("single", []), skill_registry)
         register_load_skill_tool(agent, skill_registry, sa.skills.get("single", []))
+    if harness_config and harness_config.memory.enabled:
+        inject_memory_block(agent, harness_config.memory)
+        register_memory_tools(agent, harness_config.memory)
     return agent
 
 
@@ -331,7 +353,7 @@ def create_all_agents(
     # ---- Single mode ----
     if effective_mode == "single":
         agents: dict[str, ConversableAgent] = {
-            "assistant": create_single_agent(llm_config, mcp_manager, skill_registry),
+            "assistant": create_single_agent(llm_config, mcp_manager, skill_registry, harness_config),
         }
 
         # HITL proxy for single mode
@@ -364,12 +386,12 @@ def create_all_agents(
 
     # ---- Swarm mode (default) ----
     agents = {
-        "pm": create_pm_agent(llm_config, mcp_manager),
-        "planner": create_planner_agent(llm_config, mcp_manager, skill_registry),
+        "pm": create_pm_agent(llm_config, mcp_manager, harness_config),
+        "planner": create_planner_agent(llm_config, mcp_manager, skill_registry, harness_config),
         "generator": create_generator_agent(
-            llm_config, mcp_manager, skill_registry,
+            llm_config, mcp_manager, skill_registry, harness_config,
         ),
-        "evaluator": create_evaluator_agent(llm_config, mcp_manager, skill_registry),
+        "evaluator": create_evaluator_agent(llm_config, mcp_manager, skill_registry, harness_config),
     }
 
     # ---- HITL proxies ----
