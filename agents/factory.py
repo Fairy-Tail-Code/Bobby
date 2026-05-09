@@ -17,11 +17,10 @@ from agents.channel_proxy import ROLE_DESCRIPTIONS
 from agents.user import (
     create_email_channel_proxies,
     create_dingtalk_channel_proxies,
-    create_feishu_channel_proxies,
 )
 from config.config import (
     ContextConfig, HarnessConfig, LlmConfig, SkillAssignmentConfig,
-    DingTalkConfig, FeishuConfig, SmtpConfig, ImapConfig,
+    DingTalkConfig, SmtpConfig, ImapConfig,
     load_skill_assignment_config,
 )
 from infrastructure.context.auto_compact import AutoCompactTransform
@@ -332,8 +331,6 @@ def create_all_agents(
     role_emails: dict[str, str] | None = None,
     dingtalk_config: DingTalkConfig | None = None,
     role_dingtalk_ids: dict[str, str] | None = None,
-    feishu_config: FeishuConfig | None = None,
-    role_feishu_open_ids: dict[str, str] | None = None,
     mode: str | None = None,
 ) -> dict[str, ConversableAgent]:
     """Create agents based on mode.
@@ -365,11 +362,6 @@ def create_all_agents(
         elif hitl_mode == "dingtalk" and dingtalk_config and role_dingtalk_ids:
             proxies = create_dingtalk_channel_proxies(
                 dingtalk_config, hitl_cfg, role_dingtalk_ids,
-            )
-            agents.update(proxies)
-        elif hitl_mode == "feishu" and feishu_config and role_feishu_open_ids:
-            proxies = create_feishu_channel_proxies(
-                feishu_config, hitl_cfg, role_feishu_open_ids,
             )
             agents.update(proxies)
         else:
@@ -408,13 +400,6 @@ def create_all_agents(
         )
         agents.update(proxies)
         logger.info("Created %d DingTalk proxy agents", len(proxies))
-
-    elif hitl_mode == "feishu" and feishu_config and role_feishu_open_ids:
-        proxies = create_feishu_channel_proxies(
-            feishu_config, hitl_cfg, role_feishu_open_ids,
-        )
-        agents.update(proxies)
-        logger.info("Created %d Feishu proxy agents", len(proxies))
 
     else:
         for owner_key, description in ROLE_DESCRIPTIONS.items():
