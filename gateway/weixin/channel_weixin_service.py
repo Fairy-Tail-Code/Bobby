@@ -45,9 +45,17 @@ class ChannelWeixinService(ChannelAdapter):
         future = self._pending_futures.get(request_id)
         if future is None or future.done():
             return False
-        future.set_result(text)
+        loop = future.get_loop()
+        if loop.is_closed():
+            return False
+        loop.call_soon_threadsafe(self._set_future_result, future, text)
         logger.info("Reply injected for request_id=%s", request_id)
         return True
+
+    @staticmethod
+    def _set_future_result(future: asyncio.Future[str], text: str) -> None:
+        if not future.done():
+            future.set_result(text)
 
     @property
     def pending_request_ids(self) -> list[str]:
@@ -65,5 +73,12 @@ class ChannelWeixinService(ChannelAdapter):
     async def stop(self) -> None:
         for future in self._pending_futures.values():
             if not future.done():
-                future.cancel()
+                loop = future.get_loop()
+                if not loop.is_closed():
+                    loop.call_soon_threadsafe(self._cancel_future, future)
         self._pending_futures.clear()
+
+    @staticmethod
+    def _cancel_future(future: asyncio.Future[str]) -> None:
+        if not future.done():
+            future.cancel()

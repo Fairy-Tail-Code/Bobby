@@ -21,6 +21,7 @@
 - [2026-05-09-auto-memory-extraction.md](docs/project_experience/2026-05-09-auto-memory-extraction.md) — Session 收尾自动复盘对话，提炼 durable memory 并写回 MEMORY.md
 - [2026-05-09-memory-merge-before-overwrite.md](docs/project_experience/2026-05-09-memory-merge-before-overwrite.md) — 自动抽取命中已有 memory 时先合并旧内容，仅在有效变化时写回
 - [2026-05-09-rollback-default-worktree-change.md](docs/project_experience/2026-05-09-rollback-default-worktree-change.md) — 回滚误加到 Bobby 项目内的默认 worktree 开发逻辑，改为仅作为开发协作习惯
+- [2026-05-09-weixin-hitl-cross-loop-fix.md](docs/project_experience/2026-05-09-weixin-hitl-cross-loop-fix.md) — 微信 HITL 跨事件循环修复：主 loop 发送桥接、线程安全 Future 注入
 
 ## docs/AG2_knowledge/（AG2 框架知识库）
 
@@ -30,4 +31,5 @@
 - [Handoff机制.md](docs/AG2_knowledge/Handoff机制.md) — AG2 handoff tool call 机制、常见错误、MCP Server subprocess stdin 死锁坑
 - [HITL.md](docs/AG2_knowledge/HITL.md) — Human-in-the-Loop 模式、多角色邮件代理、SMTP/IMAP 踩坑记录
 - [飞书服务化.md](docs/AG2_knowledge/飞书服务化.md) — 飞书机器人常驻服务架构、组件交互、消息拦截、Future回复注入、使用方式
+- [Gateway服务化.md](docs/AG2_knowledge/Gateway服务化.md) — Gateway 主 loop 与 AG2 工作线程的异步边界、跨 loop 桥接原则
 - [记忆系统.md](docs/AG2_knowledge/记忆系统.md) — cc-haha 记忆系统拆解、AG2 中的 prompt 注入与 Tool 化落地方式

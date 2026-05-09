@@ -32,11 +32,16 @@ harness info          # 查看安装信息
 
 ### 升级
 
-安装脚本会自动检查版本。如果有新版本，使用 `-Upgrade` 标志更新：
+安装脚本会自动检查版本。运行安装脚本时会显示：
+- **Latest version**: 远程仓库最新版本
+- **Local version**: 本地当前版本
+
+如果有新版本可用，会提示使用 `-Upgrade` 标志更新：
 
 ```powershell
 # Windows
-irm https://raw.githubusercontent.com/iamikunnnnn/Bobby/main/install/install.ps1 -OutFile install.ps1; powershell -ExecutionPolicy Bypass -File .\install.ps1 -Upgrade
+irm https://raw.githubusercontent.com/iamikunnnnn/Bobby/main/install/install.ps1 -OutFile install.ps1
+.\install.ps1 -Upgrade
 ```
 
 ```bash
@@ -44,7 +49,11 @@ irm https://raw.githubusercontent.com/iamikunnnnn/Bobby/main/install/install.ps1
 INSTALL_UPGRADE=true curl -fsSL https://raw.githubusercontent.com/iamikunnnnn/Bobby/main/install/install.sh | bash
 ```
 
-**版本管理**：使用 Git Tags（v0.0.1, v0.0.2...）进行版本控制。修改 `pyproject.toml` 中的版本号并推送到 main 分支后，GitHub Actions 会自动创建对应的 Release 和 Tag。
+**版本管理机制**：
+- 使用 Git Tags（v0.0.1, v0.0.2...）进行版本控制
+- 版本号定义在 `pyproject.toml` 的 `[project]` 部分的 `version` 字段
+- 修改版本号并推送到 main 分支后，GitHub Actions 自动创建 Release 和 Tag
+- 安装脚本通过 GitHub API 获取最新版本，并与本地 git tag 比较
 
 ## 安装后配置
 

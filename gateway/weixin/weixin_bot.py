@@ -4,7 +4,7 @@ from __future__ import annotations
 import asyncio
 import logging
 import uuid
-from typing import Awaitable, Callable
+from typing import Any, Awaitable, Callable, Coroutine
 
 from gateway.weixin.weixin_onboard import (
     AIOHTTP_AVAILABLE,
@@ -72,6 +72,21 @@ class WeixinBotService:
         logger.info("WeixinBotService stopping")
 
     async def send_text(self, chat_id: str, text: str) -> None:
+        await self._run_on_main_loop(self._send_text_in_main_loop(chat_id, text))
+
+    async def _run_on_main_loop(self, coroutine: Coroutine[Any, Any, None]) -> None:
+        if self._main_loop is None:
+            raise RuntimeError("Main event loop not set")
+        current_loop = asyncio.get_running_loop()
+        if current_loop is self._main_loop:
+            await coroutine
+            return
+        if not self._main_loop.is_running():
+            raise RuntimeError("Main event loop not running")
+        future = asyncio.run_coroutine_threadsafe(coroutine, self._main_loop)
+        await asyncio.wrap_future(future)
+
+    async def _send_text_in_main_loop(self, chat_id: str, text: str) -> None:
         if not self._session:
             raise RuntimeError("WeixinBotService not started")
         chunks = [text[i:i + self.MAX_TEXT_LENGTH] for i in range(0, len(text), self.MAX_TEXT_LENGTH)] or [text]
