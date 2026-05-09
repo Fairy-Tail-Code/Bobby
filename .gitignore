@@ -12,5 +12,6 @@ Discarded_plan/
 own_knowledge/
 memory/
 knowledge_server.db
+.tmp*
 # Runtime logs
 *.log

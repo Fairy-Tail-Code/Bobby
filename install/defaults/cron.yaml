@@ -1,0 +1,4 @@
+# Agent Cron Configuration
+enabled: true
+storage_path: "./data/cron_tasks.json"
+task_timeout: 3600
