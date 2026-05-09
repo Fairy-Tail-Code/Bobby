@@ -159,6 +159,8 @@ class MemoryConfig:
     dir: str = "memory"
     max_index_lines: int = 200
     max_index_bytes: int = 25_000
+    auto_extract_enabled: bool = True
+    max_auto_memories: int = 3
 
 
 @dataclass
@@ -296,6 +298,8 @@ def load_harness_config() -> HarnessConfig:
             dir=memory_raw.get("dir", "memory"),
             max_index_lines=memory_raw.get("max_index_lines", 200),
             max_index_bytes=memory_raw.get("max_index_bytes", 25_000),
+            auto_extract_enabled=memory_raw.get("auto_extract_enabled", True),
+            max_auto_memories=memory_raw.get("max_auto_memories", 3),
         ),
     )
 

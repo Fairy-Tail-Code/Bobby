@@ -5,6 +5,7 @@ import logging
 from datetime import datetime
 
 from config.config import KnowledgeConfig, LlmAgentConfig
+from utils.llm_completion import get_completion_text
 
 logger = logging.getLogger(__name__)
 
@@ -59,18 +60,13 @@ class ExperienceCollector:
         prompt = _EXTRACTION_PROMPT.format(history=condensed[:50000])
 
         try:
-            import autogen
-            config = self._llm_config.to_llm_config()
-            # Use a simple completion call for extraction
-            response = await autogen.a_get_completion(
+            content = await get_completion_text(
+                self._llm_config,
                 messages=[{"role": "user", "content": prompt}],
-                **config,
             )
-            if not response or not response.choices:
+            if not content:
                 logger.warning("Empty response from extraction LLM")
                 return []
-
-            content = response.choices[0].message.content
             experiences = self._parse_response(content, session_metadata)
             logger.info("Extracted %d experiences from session", len(experiences))
             return experiences

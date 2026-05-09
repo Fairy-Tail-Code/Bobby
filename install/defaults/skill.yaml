@@ -36,8 +36,8 @@ skills:
 
 # MCP server assignments per agent (must cover all MCP dependencies declared in assigned skills)
 mcp_servers:
-  pm: ["workspace", "shell"]
-  planner: ["workspace", "shell", "git", "gitee"]
-  generator: ["shell", "git", "workspace", "browser", "docker", "database", "claude_code"]
-  evaluator: ["browser", "shell", "http_api", "workspace"]
-  single: ["shell", "git", "gitee", "workspace", "browser", "claude_code"]
+  pm: ["workspace", "shell", "agent_cron"]
+  planner: ["workspace", "shell", "git", "gitee", "agent_cron"]
+  generator: ["shell", "git", "workspace", "browser", "docker", "database", "claude_code", "agent_cron"]
+  evaluator: ["browser", "shell", "http_api", "workspace", "agent_cron"]
+  single: ["shell", "git", "gitee", "workspace", "browser", "claude_code", "agent_cron"]

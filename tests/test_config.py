@@ -198,6 +198,8 @@ harness:
     dir: project-memory
     max_index_lines: 180
     max_index_bytes: 24000
+    auto_extract_enabled: false
+    max_auto_memories: 5
 """.strip(),
             encoding="utf-8",
         )
@@ -213,6 +215,8 @@ harness:
         assert config.memory.dir == "project-memory"
         assert config.memory.max_index_lines == 180
         assert config.memory.max_index_bytes == 24000
+        assert config.memory.auto_extract_enabled is False
+        assert config.memory.max_auto_memories == 5
 
 
 def test_load_knowledge_config_uses_openharness_home_paths(monkeypatch) -> None:

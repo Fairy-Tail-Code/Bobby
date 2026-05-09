@@ -16,12 +16,15 @@ from config.config import (
     load_weixin_config,
     ConfigError,
 )
+from config.cron_config import load_cron_config
 from gateway.feishu.feishu_bot import FeishuBotService
 from gateway.feishu.channel_feishu_service import ChannelFeishuService
 from gateway.weixin.weixin_bot import WeixinBotService
 from gateway.weixin.channel_weixin_service import ChannelWeixinService
 from infrastructure.mcp.manager import create_mcp_manager
 from infrastructure.agent_pool import AgentPool
+from infrastructure.cron import TaskScheduler
+from infrastructure.mcp_servers.agent_cron_server import set_task_scheduler
 from utils.paths import (
     get_session_dir, get_system_skills_dir, get_user_skills_dir,
 )
@@ -138,6 +141,7 @@ async def main() -> None:
         llm_config = load_llm_config()
         mcp_config = load_mcp_config()
         harness_config = load_harness_config()
+        cron_config = load_cron_config()
         # 2. Initialize skill registry
         system_skills_dir = get_system_skills_dir()
         user_skills_dir = get_user_skills_dir()
@@ -216,6 +220,21 @@ async def main() -> None:
             session_manager._channel_factory = _channel_factory
             session_manager._hitl_mode = "gateway"
 
+            # 6.5. Initialize task scheduler if enabled
+            if cron_config.enabled:
+                logger.info("Initializing task scheduler...")
+                task_scheduler = TaskScheduler(
+                    session_manager=session_manager,
+                    storage_path=cron_config.storage_path,
+                )
+                await task_scheduler.initialize()
+                # Set global scheduler for agent_cron MCP server
+                set_task_scheduler(task_scheduler)
+                logger.info("Task scheduler initialized")
+            else:
+                task_scheduler = None
+                logger.info("Task scheduler disabled")
+
             main_loop = asyncio.get_running_loop()
             for bot in bots.values():
                 bot.set_main_loop(main_loop)
@@ -259,6 +278,10 @@ async def main() -> None:
             session_manager.terminate_all()
             for bot in bots.values():
                 bot.stop()
+
+            # Shutdown task scheduler if enabled
+            if task_scheduler:
+                await task_scheduler.shutdown()
 
         # After async with exits, MCP is automatically disconnected
 

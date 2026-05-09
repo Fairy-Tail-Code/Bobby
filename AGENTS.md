@@ -1,5 +1,8 @@
 # 进入此项目优先阅读
 
+## 约束
+开发之前必须建立worktree
+
 ## 规则
 1. 对于所有关键性变更，必须以markdown的形式写入 `docs/project_experience/` 中，并在下方目录中列出
 2. 当用户在对话中提出新的需求而没有加到需求迭代.md，你需要主动更新需求迭代.md，如果是新的一天则新加一个标题，以天为迭代粒度
@@ -14,6 +17,10 @@
 - [AG2_openharness开发经验.md](docs/project_experience/AG2_openharness开发经验.md) — 2026-04-17 Session上下文持久化与恢复：SessionSnapshot、harness resume/list命令
 - [AG2_openharness开发经验.md](docs/project_experience/AG2_openharness开发经验.md) — 2026-04-20 群聊用户识别（owner_open_id）、Workspace文件操作加锁（FileLock）
 - [2026-05-06-gateway-setup-feishu-weixin.md](docs/project_experience/2026-05-06-gateway-setup-feishu-weixin.md) — setup 直出二维码、飞书 domain 对齐、微信 gateway 接入
+- [2026-05-09-memory-system-cc-haha-alignment.md](docs/project_experience/2026-05-09-memory-system-cc-haha-alignment.md) — Bobby 记忆系统对齐 cc-haha：MEMORY.md、load/save memory、prompt 注入、Agent 接入
+- [2026-05-09-auto-memory-extraction.md](docs/project_experience/2026-05-09-auto-memory-extraction.md) — Session 收尾自动复盘对话，提炼 durable memory 并写回 MEMORY.md
+- [2026-05-09-memory-merge-before-overwrite.md](docs/project_experience/2026-05-09-memory-merge-before-overwrite.md) — 自动抽取命中已有 memory 时先合并旧内容，仅在有效变化时写回
+- [2026-05-09-rollback-default-worktree-change.md](docs/project_experience/2026-05-09-rollback-default-worktree-change.md) — 回滚误加到 Bobby 项目内的默认 worktree 开发逻辑，改为仅作为开发协作习惯
 
 ## docs/AG2_knowledge/（AG2 框架知识库）
 
@@ -23,3 +30,4 @@
 - [Handoff机制.md](docs/AG2_knowledge/Handoff机制.md) — AG2 handoff tool call 机制、常见错误、MCP Server subprocess stdin 死锁坑
 - [HITL.md](docs/AG2_knowledge/HITL.md) — Human-in-the-Loop 模式、多角色邮件代理、SMTP/IMAP 踩坑记录
 - [飞书服务化.md](docs/AG2_knowledge/飞书服务化.md) — 飞书机器人常驻服务架构、组件交互、消息拦截、Future回复注入、使用方式
+- [记忆系统.md](docs/AG2_knowledge/记忆系统.md) — cc-haha 记忆系统拆解、AG2 中的 prompt 注入与 Tool 化落地方式

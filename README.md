@@ -174,11 +174,15 @@ harness:
   memory:
     enabled: true
     dir: memory             # 相对 OPENHARNESS_HOME，默认 ~/.openharness/memory
+    auto_extract_enabled: true
+    max_auto_memories: 3
 ```
 
 `harness setup` 里选择 `messaging gateway` 后，可以在终端勾选 `feishu`、`weixin` 中的一个或多个平台。扫码成功后会直接写回 `.env`，`harness server start` 会同时启动所有已勾选 gateway，并把两边消息汇入同一个 `SessionManager`。
 
 记忆系统会把 `MEMORY.md` 索引自动注入到各角色的 system prompt 中，并为 agent 注册 `load_memory` / `save_memory` 工具。适合保存用户偏好、行为反馈、项目决策、外部系统引用这类无法从代码和 git 直接推导的信息。
+
+当 session 完成或终止时，系统还会自动复盘聊天记录，提炼少量 durable memories 并写回同一个 `memory/` 目录。命中已有同名 memory 时，会先读取旧内容做合并，再决定是否写回。这个行为可通过 `harness.memory.auto_extract_enabled` 关闭。
 
 ### mcp.yaml
 

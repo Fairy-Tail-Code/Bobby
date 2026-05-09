@@ -9,6 +9,7 @@ from pathlib import Path
 from typing import Any
 
 from infrastructure.session.session_manager import SessionManager
+from infrastructure.session.swarm_session import SwarmSession
 
 logger = logging.getLogger(__name__)
 
@@ -26,7 +27,7 @@ async def run_cron_task(
         session_manager: The shared SessionManager instance.
         prompt: The prompt to execute.
         mode: Execution mode (single/swarm).
-        chat_id: Chat ID for the session (defaults to "cron").
+        chat_id: Chat ID for session (defaults to "cron").
         task_id: Task ID for tracking.
 
     Returns:
@@ -38,19 +39,24 @@ async def run_cron_task(
     task_chat_id = f"cron_{task_id}_{datetime.now().strftime('%Y%m%d_%H%M%S')}"
 
     try:
-        # Use session_manager to create a new session
-        # We'll create a temporary session and run it directly
-        await session_manager._create_session(
+        # Create a cron-specific session directly (without frontend for cron tasks)
+        session = SwarmSession(
             chat_id=task_chat_id,
-            prompt=prompt,
-            open_id="",
-            chat_type="p2p",
+            frontend=session_manager._frontend,
+            mcp_manager=session_manager._mcp_manager,
+            llm_config=session_manager._llm_config,
+            harness_config=session_manager._harness_config,
+            skill_registry=session_manager._skill_registry,
+            session_dir=session_manager._session_dir,
+            mode=mode,
+            agent_pool=session_manager._agent_pool,
+            channel_factory=session_manager._channel_factory,
+            hitl_mode="stdin",  # No HITL for cron
         )
+        session._on_complete = lambda cid: logger.info("Cron session completed: %s", cid)
 
-        # Get the newly created session
-        session = session_manager._sessions.get(task_chat_id)
-        if not session:
-            raise ValueError(f"Failed to create session for cron task: {task_id}")
+        # Start the session
+        session.start(prompt)
 
         # Wait for completion (with timeout)
         try:
@@ -64,7 +70,7 @@ async def run_cron_task(
                 "task_id": task_id,
             }
 
-        # Extract chat history from the session
+        # Extract chat history from session
         chat_history = session._extract_messages_from_agents()
 
         # Save session history

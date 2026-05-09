@@ -59,5 +59,11 @@ mcp_servers:
     args: ["_mcp", "claude_code"]
     startup_timeout: 10
 
+  agent_cron:
+    transport: stdio
+    command: harness
+    args: ["_mcp", "agent_cron"]
+    startup_timeout: 30
+
 base_config:
   tool_timeout: 1800

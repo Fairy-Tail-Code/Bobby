@@ -477,6 +477,7 @@ _MCP_SERVERS = {
     "docs_web": "infrastructure.mcp_servers.docs_web_server",
     "gitee": "infrastructure.mcp_servers.gitee_server",
     "claude_code": "infrastructure.mcp_servers.claude_code_server",
+    "agent_cron": "infrastructure.mcp_servers.agent_cron_server",
 }
 
 _mcp_app = typer.Typer(help="Internal: run MCP servers.")

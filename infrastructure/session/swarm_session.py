@@ -273,6 +273,7 @@ class SwarmSession:
 
             # Knowledge collection (fire-and-forget)
             if chat_history:
+                await self._extract_and_persist_memory(chat_history, session_id, status="completed")
                 await self._collect_and_sync_knowledge(chat_history, session_id)
 
         except asyncio.CancelledError:
@@ -288,6 +289,8 @@ class SwarmSession:
                 f"⚠️ 任务已终止\n"
                 f"📋 会话ID（可用于恢复）: {session_id}",
             )
+            if messages:
+                await self._extract_and_persist_memory(messages, session_id, status="terminated")
         except Exception:
             logger.exception("SwarmSession error: chat_id=%s", self.chat_id)
             await self._frontend.send_text(self.chat_id, "❌ 任务执行出错，请查看日志")
@@ -357,6 +360,43 @@ class SwarmSession:
                     )
         except Exception:
             logger.exception("Knowledge collection/sync failed (chat_id=%s)", self.chat_id)
+
+    async def _extract_and_persist_memory(
+        self,
+        chat_history: list[dict],
+        session_id: str,
+        *,
+        status: str,
+    ) -> None:
+        """Extract durable memories from a finished session and persist them locally."""
+        memory_config = self._harness_config.memory
+        if not memory_config or not memory_config.enabled or not memory_config.auto_extract_enabled:
+            return
+
+        try:
+            from infrastructure.memory.extractor import SessionMemoryExtractor
+
+            extractor = SessionMemoryExtractor(self._llm_config.generator, memory_config)
+            persisted = await extractor.persist_from_session(
+                chat_history=chat_history,
+                session_metadata={
+                    "prompt": self._prompt,
+                    "mode": self._mode,
+                    "status": status,
+                    "session_id": session_id,
+                    "project_type": "+".join(self._harness_config.tech_stack.values())
+                    if self._harness_config.tech_stack else None,
+                },
+            )
+            if persisted:
+                logger.info(
+                    "Persisted %d extracted memories (chat_id=%s, session_id=%s)",
+                    len(persisted),
+                    self.chat_id,
+                    session_id,
+                )
+        except Exception:
+            logger.exception("Automatic memory extraction failed (chat_id=%s)", self.chat_id)
 
     # ---------------------------------------------------- agent creation
 
