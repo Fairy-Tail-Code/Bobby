@@ -1,11 +1,13 @@
 from __future__ import annotations
 
+import re
 import uuid
 from dataclasses import dataclass
 from typing import Any
 
 from autogen.beta import Agent, AgentReply, MemoryStream
 from autogen.beta.events import ToolCallEvent
+from pydantic import ValidationError
 
 from agents.network_models import (
     AGENT_ROLE_BY_OWNER,
@@ -30,7 +32,7 @@ class _RoleSession:
         self,
         *,
         role_key: str,
-        agent: Agent[NetworkTurn],
+        agent: Agent[Any],
         frontend,
         chat_id: str,
     ) -> None:
@@ -39,7 +41,7 @@ class _RoleSession:
         self.frontend = frontend
         self.chat_id = chat_id
         self.stream = MemoryStream()
-        self.reply: AgentReply[NetworkTurn, NetworkTurn] | None = None
+        self.reply: AgentReply[Any, Any] | None = None
         self._sub_ids: list = []
         self._register_observers()
 
@@ -69,7 +71,7 @@ class _RoleSession:
         parsed = await self.reply.content(retries=1)
         if parsed is None:
             raise RuntimeError(f"{self.display_name} returned an empty beta-network response")
-        return parsed
+        return _coerce_network_turn(parsed)
 
     def close(self) -> None:
         for sub_id in self._sub_ids:
@@ -83,7 +85,7 @@ class NetworkSwarmRuntime:
     def __init__(
         self,
         *,
-        agents: dict[str, Agent[NetworkTurn]],
+        agents: dict[str, Agent[Any]],
         frontend,
         channel: ChannelAdapter | None,
         chat_id: str,
@@ -295,3 +297,43 @@ def _format_transcript(
             continue
         lines.append(f"[{name}] {content}")
     return "\n".join(lines) if lines else "(empty transcript)"
+
+
+def _coerce_network_turn(payload: Any) -> NetworkTurn:
+    if isinstance(payload, NetworkTurn):
+        return payload
+
+    if isinstance(payload, dict):
+        return NetworkTurn.model_validate(payload)
+
+    if isinstance(payload, str):
+        candidate = _extract_json_object(payload)
+        try:
+            return NetworkTurn.model_validate_json(candidate)
+        except ValidationError as exc:
+            snippet = payload.strip().replace("\r", " ").replace("\n", " ")
+            raise ValueError(
+                f"Beta-network agent returned invalid NetworkTurn JSON: {snippet[:200]}"
+            ) from exc
+
+    raise TypeError(f"Unsupported beta-network payload type: {type(payload).__name__}")
+
+
+def _extract_json_object(text: str) -> str:
+    stripped = text.strip()
+    if not stripped:
+        return stripped
+
+    if stripped.startswith("```"):
+        lines = stripped.splitlines()
+        if lines and lines[0].startswith("```"):
+            lines = lines[1:]
+        if lines and lines[-1].strip() == "```":
+            lines = lines[:-1]
+        stripped = "\n".join(lines).strip()
+
+    if stripped.startswith("{") and stripped.endswith("}"):
+        return stripped
+
+    match = re.search(r"\{.*\}", stripped, flags=re.DOTALL)
+    return match.group(0).strip() if match else stripped

@@ -23,6 +23,7 @@
 - [2026-05-09-rollback-default-worktree-change.md](docs/project_experience/2026-05-09-rollback-default-worktree-change.md) — 回滚误加到 Bobby 项目内的默认 worktree 开发逻辑，改为仅作为开发协作习惯
 - [2026-05-09-weixin-hitl-cross-loop-fix.md](docs/project_experience/2026-05-09-weixin-hitl-cross-loop-fix.md) — 微信 HITL 跨事件循环修复：主 loop 发送桥接、线程安全 Future 注入
 - [2026-05-09-beta-network-migration.md](docs/project_experience/2026-05-09-beta-network-migration.md) — 多 Agent 专家模式从 group chat/pattern 迁移到 AG2 beta network runtime
+- [2026-05-09-deepseek-response-format-fallback.md](docs/project_experience/2026-05-09-deepseek-response-format-fallback.md) — DeepSeek 不支持 `response_format=json_schema` 时，专家模式降级为 prompt JSON contract + runtime 本地解析
 
 ## docs/AG2_knowledge/（AG2 框架知识库）
 

@@ -111,6 +111,31 @@ beta network 路径：
 
 如果未来要补自动摘要压缩，应优先写成 beta middleware，而不是继续依赖 `ConversableAgent` transform hook。
 
+## 7. 结构化输出兼容性
+
+beta `Agent` 一旦声明 `response_schema=...`，并且底层配置使用的是 `OpenAIConfig + chat.completions`，当前 `autogen.beta` 会自动附带：
+
+- `response_format.type=json_schema`
+
+这在 OpenAI 原生兼容接口上通常是成立的，但在部分“OpenAI 兼容”后端上并不一定可用。已验证的一类典型情况是：
+
+- `https://api.deepseek.com/chat/completions`
+- 返回 `400 Bad Request`
+- 报错：`This response_format type is unavailable now`
+
+因此在 beta network 场景里，结构化输出要分成两层理解：
+
+1. “业务层必须有结构化 contract”是必须的。
+2. “传输层一定能靠 `response_format=json_schema` 强约束”并不成立。
+
+本项目当前采取的兼容策略是：
+
+1. 对支持该能力的后端，继续保留 `response_schema=NetworkTurn`
+2. 对 DeepSeek 这类不支持的后端，改为 prompt 明示 JSON contract
+3. 由应用层 runtime 在最终落点自行解析 `message / next_step`
+
+经验上，beta network 的路由正确性不能只押注在模型供应商的结构化输出能力上；应用层最好始终保留一层本地校验与兜底解析。
+
 ## 本项目迁移建议
 
 1. single 模式可以暂时保留 legacy path，避免一次性扩大爆炸半径。

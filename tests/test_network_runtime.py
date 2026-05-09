@@ -58,6 +58,14 @@ def _agent(name: str, *responses: str) -> Agent[NetworkTurn]:
     )
 
 
+def _plain_agent(name: str, *responses: str) -> Agent[str]:
+    return Agent(
+        name=name,
+        prompt=f"You are {name}.",
+        config=TestConfig(*responses),
+    )
+
+
 def test_network_runtime_runs_full_swarm_flow() -> None:
     frontend = _FrontendStub()
     channel = _ChannelStub(["仓库地址是 https://example.com/repo.git"])
@@ -131,3 +139,28 @@ def test_network_runtime_rejects_invalid_next_step_for_role() -> None:
         assert "unsupported next_step" in str(exc)
     else:
         raise AssertionError("Expected ValueError for invalid PM next_step")
+
+
+def test_network_runtime_parses_plain_json_for_schema_incompatible_backend() -> None:
+    runtime = NetworkSwarmRuntime(
+        agents={
+            "pm": _plain_agent(
+                "PM",
+                '```json\n{"message":"已确认需求，先结束本轮。","next_step":"terminate"}\n```',
+            ),
+            "planner": _agent("Planner", '{"message":"unused","next_step":"handoff_generator"}'),
+            "generator": _agent("Generator", '{"message":"unused","next_step":"handoff_evaluator"}'),
+            "evaluator": _agent("Evaluator", '{"message":"unused","next_step":"complete"}'),
+        },
+        frontend=_FrontendStub(),
+        channel=_ChannelStub([]),
+        chat_id="chat-3",
+        max_rounds=2,
+        hitl_timeout=30,
+    )
+
+    result = asyncio.run(runtime.run(prompt="兼容 DeepSeek"))
+
+    assert result.status == "terminated"
+    assert result.last_speaker == "PM"
+    assert result.transcript[-1]["content"] == "已确认需求，先结束本轮。"
