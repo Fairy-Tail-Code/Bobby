@@ -1,6 +1,6 @@
-"""Session manager — routes incoming gateway messages to the right SwarmSession.
+"""Session manager — routes incoming gateway messages to the right AgentSession.
 
-One SwarmSession per chat_id. Creates on first message, injects replies
+One AgentSession per chat_id. Creates on first message, injects replies
 on subsequent messages, terminates on command, and supports session resume.
 """
 from __future__ import annotations
@@ -17,7 +17,7 @@ from infrastructure.mcp.manager import McpManager
 from utils.paths import get_session_dir
 from infrastructure.session.session_snapshots import find_snapshot_path, iter_snapshot_paths
 from infrastructure.skills.registry import SkillRegistry
-from infrastructure.session.swarm_session import SwarmSession, _TERMINATE_KEYWORDS
+from infrastructure.session.agent_session import AgentSession, _TERMINATE_KEYWORDS
 from infrastructure.agent_pool import AgentPool
 
 logger = logging.getLogger(__name__)
@@ -31,7 +31,7 @@ _RESTART_PATTERN = re.compile(r"^harness\s+restart$", re.IGNORECASE)
 
 
 class SessionManager:
-    """Manages multiple SwarmSessions keyed by chat_id.
+    """Manages multiple AgentSessions keyed by chat_id.
 
     Args:
         frontend:        Shared Frontend (e.g. FeishuBotService).
@@ -41,7 +41,6 @@ class SessionManager:
         skill_registry:  Skill registry.
         session_dir:     Directory for saving chat history.
         channel_factory: Callable that creates a ChannelAdapter for a chat_id.
-        hitl_mode:       HITL mode string passed to SwarmSession.
     """
 
     def __init__(
@@ -55,7 +54,6 @@ class SessionManager:
         restart_event: asyncio.Event | None = None,
         agent_pool: AgentPool | None = None,
         channel_factory: "Callable[[str], ChannelAdapter] | None" = None,
-        hitl_mode: str = "feishu",
     ) -> None:
         if not session_dir:
             session_dir = str(get_session_dir())
@@ -68,8 +66,7 @@ class SessionManager:
         self._restart_event = restart_event
         self._agent_pool = agent_pool
         self._channel_factory = channel_factory
-        self._hitl_mode = hitl_mode
-        self._sessions: dict[str, SwarmSession] = {}
+        self._sessions: dict[str, AgentSession] = {}
         self._chat_modes: dict[str, str] = {}  # chat_id -> "swarm" | "single"
 
     @property
@@ -139,7 +136,7 @@ class SessionManager:
             # Group chat: only session creator can reply (swarm mode only)
             if (
                 chat_type == "group"
-                and session._mode != "single"
+                and session.mode != "single"
                 and session.owner_open_id
                 and open_id != session.owner_open_id
             ):
@@ -166,16 +163,15 @@ class SessionManager:
             await self._create_session(chat_id, stripped, open_id=open_id, chat_type=chat_type)
 
     async def _create_session(self, chat_id: str, prompt: str, *, open_id: str = "", chat_type: str = "p2p") -> None:
-        """Create a new SwarmSession and start it."""
+        """Create a new AgentSession and start it."""
         # Clean up any old completed session
         old = self._sessions.get(chat_id)
         if old:
-            old.terminate()
-            await old._channel.stop()
+            await old.dispose()
 
         mode = self._chat_modes.get(chat_id, self._harness_config.mode)
 
-        session = SwarmSession(
+        session = AgentSession(
             chat_id=chat_id,
             frontend=self._frontend,
             mcp_manager=self._mcp_manager,
@@ -186,9 +182,8 @@ class SessionManager:
             mode=mode,
             agent_pool=self._agent_pool,
             channel_factory=self._channel_factory,
-            hitl_mode=self._hitl_mode,
         )
-        session._on_complete = self._cleanup_session
+        session.set_on_complete(self._cleanup_session)
         # Record session owner for group chat access control (swarm mode only)
         if mode != "single" and chat_type == "group" and open_id:
             session.owner_open_id = open_id
@@ -199,7 +194,7 @@ class SessionManager:
         await self._frontend.send_text(chat_id, f"🚀 任务已启动 ({mode_label}): {prompt[:100]}")
 
     async def _resume_session(self, chat_id: str, session_id: str) -> None:
-        """Load a saved session snapshot and resume it in a new SwarmSession."""
+        """Load a saved session snapshot and resume it in a new AgentSession."""
         snapshot_path = find_snapshot_path(self._session_dir, session_id)
         if snapshot_path is None:
             await self._frontend.send_text(chat_id, f"未找到会话ID: {session_id}")
@@ -224,11 +219,10 @@ class SessionManager:
         # Clean up any existing session for this chat_id
         old = self._sessions.get(chat_id)
         if old:
-            old.terminate()
-            await old._channel.stop()
+            await old.dispose()
 
         # Create new session and start in resume mode (no owner check for resume)
-        session = SwarmSession(
+        session = AgentSession(
             chat_id=chat_id,
             frontend=self._frontend,
             mcp_manager=self._mcp_manager,
@@ -238,9 +232,8 @@ class SessionManager:
             session_dir=self._session_dir,
             agent_pool=self._agent_pool,
             channel_factory=self._channel_factory,
-            hitl_mode=self._hitl_mode,
         )
-        session._on_complete = self._cleanup_session
+        session.set_on_complete(self._cleanup_session)
         self._sessions[chat_id] = session
         session.start_resume(saved_messages, original_prompt)
 
@@ -296,7 +289,7 @@ class SessionManager:
     def _cleanup_session(self, chat_id: str) -> None:
         """Remove a completed/terminated session from memory.
 
-        Called by SwarmSession via on_complete callback after _run() finishes.
+        Called by AgentSession via on_complete callback after _run() finishes.
         Session data is already persisted to JSON, so the in-memory object
         is no longer needed.
         """

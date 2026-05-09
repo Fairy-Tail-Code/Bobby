@@ -2,7 +2,6 @@ from __future__ import annotations
 
 import re
 import uuid
-from dataclasses import dataclass
 from typing import Any
 
 from autogen.beta import Agent, AgentReply, MemoryStream
@@ -18,13 +17,7 @@ from agents.network_models import (
     ROLE_DISPLAY_NAMES,
 )
 from infrastructure.channel.channel import ChannelAdapter
-
-
-@dataclass
-class NetworkRunResult:
-    transcript: list[dict[str, Any]]
-    last_speaker: str
-    status: str
+from orchestration.run_result import OrchestrationRunResult
 
 
 class _RoleSession:
@@ -97,6 +90,7 @@ class NetworkSwarmRuntime:
         self._chat_id = chat_id
         self._max_rounds = max_rounds
         self._hitl_timeout = hitl_timeout
+        self._transcript: list[dict[str, Any]] = []
         self._roles = {
             key: _RoleSession(
                 role_key=key,
@@ -112,8 +106,9 @@ class NetworkSwarmRuntime:
         *,
         prompt: str,
         resume_messages: list[dict[str, Any]] | None = None,
-    ) -> NetworkRunResult:
+    ) -> OrchestrationRunResult:
         transcript = [dict(message) for message in (resume_messages or [])]
+        self._transcript = transcript
 
         if resume_messages:
             current_role, current_message = self._build_resume_state(prompt, transcript)
@@ -135,6 +130,7 @@ class NetworkSwarmRuntime:
                 transcript.append(
                     {"role": "assistant", "name": last_speaker, "content": turn.message}
                 )
+                self._transcript = list(transcript)
 
                 if self._frontend:
                     await self._frontend.send_text(
@@ -177,11 +173,15 @@ class NetworkSwarmRuntime:
         finally:
             self.close()
 
-        return NetworkRunResult(
+        self._transcript = list(transcript)
+        return OrchestrationRunResult(
             transcript=transcript,
             last_speaker=last_speaker,
             status=status,
         )
+
+    def get_transcript(self) -> list[dict[str, Any]]:
+        return list(self._transcript)
 
     def close(self) -> None:
         for role in self._roles.values():

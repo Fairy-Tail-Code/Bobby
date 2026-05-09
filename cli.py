@@ -157,7 +157,6 @@ async def _chat_main(prompt: str, mode: str | None) -> None:
             session_dir=str(get_session_dir()),
             agent_pool=agent_pool,
             channel_factory=lambda chat_id: CLIChannel(),
-            hitl_mode="cli",
         )
 
         mode_label = "single" if harness_config.mode == "single" else "swarm"
@@ -216,7 +215,7 @@ async def _repl_watch_session(session, chat_id: str, session_manager) -> None:
     and inject it.
     """
     while session.is_running:
-        channel = getattr(session, "_channel", None)
+        channel = getattr(session, "channel", None)
         if channel is None:
             await asyncio.sleep(0.3)
             continue

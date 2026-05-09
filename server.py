@@ -222,7 +222,6 @@ async def main() -> None:
 
             session_manager._frontend = MultiGatewayFrontend(bots)
             session_manager._channel_factory = _channel_factory
-            session_manager._hitl_mode = "gateway"
 
             # 6.5. Initialize task scheduler if enabled
             if cron_config.enabled:

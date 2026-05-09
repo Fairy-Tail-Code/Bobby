@@ -8,8 +8,8 @@ from datetime import datetime
 from pathlib import Path
 from typing import Any
 
+from infrastructure.session.agent_session import AgentSession
 from infrastructure.session.session_manager import SessionManager
-from infrastructure.session.swarm_session import SwarmSession
 
 logger = logging.getLogger(__name__)
 
@@ -21,7 +21,7 @@ async def run_cron_task(
     chat_id: str,
     task_id: str,
 ) -> dict[str, Any]:
-    """Execute a cron task by creating a temporary SwarmSession.
+    """Execute a cron task by creating a temporary AgentSession.
 
     Args:
         session_manager: The shared SessionManager instance.
@@ -40,7 +40,7 @@ async def run_cron_task(
 
     try:
         # Create a cron-specific session directly (without frontend for cron tasks)
-        session = SwarmSession(
+        session = AgentSession(
             chat_id=task_chat_id,
             frontend=session_manager._frontend,
             mcp_manager=session_manager._mcp_manager,
@@ -51,16 +51,15 @@ async def run_cron_task(
             mode=mode,
             agent_pool=session_manager._agent_pool,
             channel_factory=session_manager._channel_factory,
-            hitl_mode="stdin",  # No HITL for cron
         )
-        session._on_complete = lambda cid: logger.info("Cron session completed: %s", cid)
+        session.set_on_complete(lambda cid: logger.info("Cron session completed: %s", cid))
 
         # Start the session
         session.start(prompt)
 
         # Wait for completion (with timeout)
         try:
-            await asyncio.wait_for(session._task, timeout=3600)
+            await asyncio.wait_for(session.task, timeout=3600)
         except asyncio.TimeoutError:
             logger.error(f"Cron task timed out: task_id={task_id}")
             session.terminate()
@@ -71,7 +70,7 @@ async def run_cron_task(
             }
 
         # Extract chat history from session
-        chat_history = session._extract_messages_from_agents()
+        chat_history = session.transcript
 
         # Save session history
         session_dir = Path(session_manager._session_dir)

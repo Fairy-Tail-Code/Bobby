@@ -7,6 +7,7 @@ from autogen.beta.testing import TestConfig
 
 from agents.network_models import NetworkTurn
 from orchestration.network_runtime import NetworkSwarmRuntime
+from orchestration.run_result import OrchestrationRunResult
 
 
 class _FrontendStub:
@@ -98,6 +99,7 @@ def test_network_runtime_runs_full_swarm_flow() -> None:
 
     result = asyncio.run(runtime.run(prompt="做一个带记忆系统的多 agent 开发助手"))
 
+    assert isinstance(result, OrchestrationRunResult)
     assert result.status == "completed"
     assert result.last_speaker == "Evaluator"
     assert channel.started is True
@@ -164,3 +166,4 @@ def test_network_runtime_parses_plain_json_for_schema_incompatible_backend() -> 
     assert result.status == "terminated"
     assert result.last_speaker == "PM"
     assert result.transcript[-1]["content"] == "已确认需求，先结束本轮。"
+    assert runtime.get_transcript() == result.transcript

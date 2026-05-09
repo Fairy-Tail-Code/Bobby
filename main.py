@@ -68,7 +68,6 @@ async def run(prompt: str) -> None:
             session_dir=str(get_session_dir()),
             agent_pool=agent_pool,
             channel_factory=lambda chat_id: CLIChannel(),
-            hitl_mode="cli",
         )
 
         chat_id = "cli"
@@ -82,7 +81,7 @@ async def run(prompt: str) -> None:
         if session and session.is_running:
             try:
                 while session.is_running:
-                    channel = getattr(session, "_channel", None)
+                    channel = getattr(session, "channel", None)
                     if channel is not None:
                         pending_id = channel.get_any_pending_request_id()
                         if pending_id is not None:
