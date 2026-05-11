@@ -180,7 +180,7 @@ harness:
   hitl:
     mode: stdin             # stdin | email | dingtalk | gateway
     gateways: []            # 仅 mode=gateway 时生效，例如 [feishu, weixin]
-  acpx:
+  claude_code:
     model: sonnet           # Claude Code 委托模式
   memory:
     enabled: true
