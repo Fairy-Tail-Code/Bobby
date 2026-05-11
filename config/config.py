@@ -172,7 +172,7 @@ class HarnessConfig:
     tech_stack: dict[str, str] = field(default_factory=dict)
     context: ContextConfig = field(default_factory=ContextConfig)
     hitl: HitlConfig = field(default_factory=HitlConfig)
-    acpx: ClaudeCodeConfig = field(default_factory=ClaudeCodeConfig)
+    claude_code: ClaudeCodeConfig = field(default_factory=ClaudeCodeConfig)
     knowledge: KnowledgeConfig = field(default_factory=KnowledgeConfig)
     memory: MemoryConfig = field(default_factory=MemoryConfig)
 
@@ -287,11 +287,11 @@ def load_harness_config() -> HarnessConfig:
         tech_stack=raw.get("tech_stack", {}),
         context=context,
         hitl=hitl,
-        acpx=ClaudeCodeConfig(
-            model=acpx_raw.get("model", ""),
-            default_timeout=acpx_raw.get("default_timeout", 600),
-            max_retries=acpx_raw.get("max_retries", 2),
-        ) if (acpx_raw := raw.get("acpx", {})) else ClaudeCodeConfig(),
+        claude_code=ClaudeCodeConfig(
+            model=claude_code_raw.get("model", ""),
+            default_timeout=claude_code_raw.get("default_timeout", 600),
+            max_retries=claude_code_raw.get("max_retries", 2),
+        ) if (claude_code_raw := raw.get("claude_code", {})) else ClaudeCodeConfig(),
         knowledge=load_knowledge_config(),
         memory=MemoryConfig(
             enabled=memory_raw.get("enabled", True),

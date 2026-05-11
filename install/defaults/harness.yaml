@@ -37,7 +37,7 @@ harness:
     timeout: 3600
     subject_prefix: "[OpenHarness]"
 
-  acpx:
+  claude_code:
     model: sonnet
     default_timeout: 600
     max_retries: 2
