@@ -27,6 +27,12 @@ class _FrontendStub:
         self.tool_calls.append((chat_id, agent_name, tool_name))
 
 
+class _FailingToolCallFrontend(_FrontendStub):
+    async def on_tool_call(self, chat_id: str, agent_name: str, tool_name: str) -> None:
+        del chat_id, agent_name, tool_name
+        raise RuntimeError("tool call notification failed")
+
+
 class _ChannelStub:
     def __init__(self, replies: list[str]) -> None:
         self.replies = list(replies)
@@ -230,3 +236,29 @@ def test_role_session_tool_call_stream_accepts_beta_ctx_injection() -> None:
         role_session.close()
 
     assert frontend.tool_calls == [("chat-5", "PM", "load_memory")]
+
+
+def test_role_session_tool_call_notification_failure_does_not_abort_stream() -> None:
+    frontend = _FailingToolCallFrontend()
+    role_session = _RoleSession(
+        role_key="pm",
+        agent=_plain_agent("PM", '{"message":"unused","next_step":"terminate"}'),
+        frontend=frontend,
+        chat_id="chat-6",
+    )
+
+    async def run() -> None:
+        event = ToolCallEvent(
+            id="call-2",
+            name="save_memory",
+            arguments='{"memory_type":"project"}',
+            provider_data={},
+        )
+        await role_session.stream.send(event, Context(stream=role_session.stream))
+        history = list(await role_session.stream.history.get_events())
+        assert history[-1].name == "save_memory"
+
+    try:
+        asyncio.run(run())
+    finally:
+        role_session.close()

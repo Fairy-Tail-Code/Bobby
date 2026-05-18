@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import logging
 import re
 import uuid
 from typing import Any
@@ -19,6 +20,8 @@ from agents.network_models import (
 )
 from infrastructure.channel.channel import ChannelAdapter
 from orchestration.run_result import OrchestrationRunResult
+
+logger = logging.getLogger(__name__)
 
 
 class _RoleSession:
@@ -56,11 +59,20 @@ class _RoleSession:
         **kwargs: Any,
     ) -> None:
         del __ctx__, kwargs
-        await self.frontend.on_tool_call(
-            self.chat_id,
-            self.display_name,
-            event.name,
-        )
+        try:
+            await self.frontend.on_tool_call(
+                self.chat_id,
+                self.display_name,
+                event.name,
+            )
+        except Exception:
+            logger.warning(
+                "Frontend tool-call notification failed: chat_id=%s role=%s tool=%s",
+                self.chat_id,
+                self.display_name,
+                event.name,
+                exc_info=True,
+            )
 
     async def ask(self, message: str) -> NetworkTurn:
         if self.reply is None:
