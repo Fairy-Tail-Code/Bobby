@@ -3,8 +3,9 @@ from __future__ import annotations
 from typing import Any, Iterable
 from urllib.parse import urlparse
 
-from autogen.beta import Agent
+from autogen.beta import Agent, PromptedSchema
 from autogen.beta.config import OpenAIConfig
+from autogen.beta.config.config import ModelConfig
 from autogen.beta.middleware.builtin.history_limiter import HistoryLimiter
 from autogen.beta.middleware.builtin.token_limiter import TokenLimiter
 from autogen.beta.tools.final.function_tool import FunctionTool
@@ -14,6 +15,7 @@ from agents.prompts.loader import load_prompt
 from config.config import ContextConfig, HarnessConfig, LlmAgentConfig, LlmConfig, SkillAssignmentConfig, load_skill_assignment_config
 from infrastructure.mcp.beta_tool_bridge import build_beta_tools_for_servers
 from infrastructure.mcp.manager import McpManager
+from infrastructure.llm.deepseek_beta_config import DeepSeekOpenAIConfig
 from infrastructure.memory.beta_tool import build_beta_memory_tools
 from infrastructure.memory.injection import build_memory_block
 from infrastructure.skills.beta_tool import build_beta_skill_tools
@@ -29,7 +31,26 @@ def _get_skill_assignment() -> SkillAssignmentConfig:
     return _skill_assignment
 
 
-def _to_beta_config(agent_config: LlmAgentConfig) -> OpenAIConfig:
+def _is_deepseek_backend(agent_config: LlmAgentConfig) -> bool:
+    base_url = (agent_config.base_url or "").strip().lower()
+    if not base_url:
+        return False
+
+    parsed = urlparse(base_url if "://" in base_url else f"https://{base_url}")
+    host = (parsed.netloc or parsed.path or base_url).lower()
+    return "deepseek" in host or "deepseek" in base_url
+
+
+def _to_beta_config(agent_config: LlmAgentConfig) -> ModelConfig:
+    if _is_deepseek_backend(agent_config):
+        return DeepSeekOpenAIConfig(
+            model=agent_config.model,
+            api_key=agent_config.api_key,
+            base_url=agent_config.base_url,
+            temperature=agent_config.temperature,
+            streaming=agent_config.stream,
+        )
+
     return OpenAIConfig(
         model=agent_config.model,
         api_key=agent_config.api_key,
@@ -40,13 +61,7 @@ def _to_beta_config(agent_config: LlmAgentConfig) -> OpenAIConfig:
 
 
 def _supports_native_response_schema(agent_config: LlmAgentConfig) -> bool:
-    base_url = (agent_config.base_url or "").strip().lower()
-    if not base_url:
-        return True
-
-    parsed = urlparse(base_url if "://" in base_url else f"https://{base_url}")
-    host = (parsed.netloc or parsed.path or base_url).lower()
-    return "deepseek" not in host and "deepseek" not in base_url
+    return not _is_deepseek_backend(agent_config)
 
 
 def _build_network_contract(
@@ -70,11 +85,16 @@ def _build_network_contract(
         return contract + "\n系统会按 schema 校验你的最终回复，不要输出该结构之外的额外文字。"
     return (
         contract
-        + "\n当前模型后端不支持 `response_format=json_schema` 强约束。"
-        "你必须直接输出单个原始 JSON object，且只输出这个 JSON；不要加 Markdown 代码块，不要加解释。"
-        "不要输出 `[PM]`、`[Planner]` 这类身份前缀，不要先寒暄再补 JSON。"
-        '正确示例：{"message":"请提供仓库地址。","next_step":"ask_user"}'
+        + "\n当前模型后端不支持原生 `response_format=json_schema`。"
+        "系统会通过 prompt schema 约束你的结构化输出。"
+        "你仍然必须只输出符合 schema 的 JSON，不要输出 `[PM]`、`[Planner]` 这类身份前缀，不要加额外解释。"
     )
+
+
+def _build_response_schema(native_response_schema: bool):
+    if native_response_schema:
+        return NetworkTurn
+    return PromptedSchema(NetworkTurn)
 
 
 def _build_prompt(
@@ -180,7 +200,7 @@ def _create_role_agent(
             harness_config=harness_config,
         ),
         middleware=_build_middleware(harness_config.context if harness_config else None),
-        response_schema=NetworkTurn if native_response_schema else None,
+        response_schema=_build_response_schema(native_response_schema),
     )
 
 

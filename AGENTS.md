@@ -29,6 +29,7 @@
 - [2026-05-18-beta-tool-ctx-validation.md](docs/project_experience/2026-05-18-beta-tool-ctx-validation.md) — AG2 beta MCP 工具桥动态签名修复：兼容 `__ctx__` 注入、零参数工具与可选参数省略
 - [2026-05-18-beta-network-plaintext-fallback.md](docs/project_experience/2026-05-18-beta-network-plaintext-fallback.md) — AG2 beta network 非 schema 路径下纯文本回复降级：首轮 PM 提问不再因 JSON 校验失败中断 session
 - [2026-05-18-beta-stream-ctx-callback.md](docs/project_experience/2026-05-18-beta-stream-ctx-callback.md) — AG2 beta `MemoryStream` / tool-call observer 的 `__ctx__` 兼容封装，修复第二轮工具调用时的 stream 回调校验失败
+- [2026-05-18-deepseek-beta-prompted-schema.md](docs/project_experience/2026-05-18-deepseek-beta-prompted-schema.md) — 保留 AG2 前提下，将 DeepSeek beta 路径切回 `PromptedSchema + thinking disabled`，避免 `reasoning_content` 回放阻塞
 
 ## docs/AG2_knowledge/（AG2 框架知识库）
 
@@ -44,4 +45,5 @@
 - [Beta工具参数校验.md](docs/AG2_knowledge/Beta工具参数校验.md) — AG2 beta `FunctionTool` 的 `__ctx__` 注入、签名推断与 MCP 动态工具桥落地原则
 - [Beta纯文本降级.md](docs/AG2_knowledge/Beta纯文本降级.md) — 非 schema 后端下 beta network 的 prompt JSON contract 与 runtime 纯文本兜底策略
 - [Beta事件流上下文兼容.md](docs/AG2_knowledge/Beta事件流上下文兼容.md) — beta stream subscriber / MemoryStream history callback 与 `__ctx__` 注入的兼容处理
+- [PromptedSchema与DeepSeek.md](docs/AG2_knowledge/PromptedSchema与DeepSeek.md) — 在 AG2 beta 中面向 DeepSeek 这类非原生 schema / thinking 模型的推荐落地方式
 - [会话与运行时分层.md](docs/AG2_knowledge/会话与运行时分层.md) — AgentSession 与 runtime 的职责边界、何时该放在 session 层，何时该下沉到 orchestration
