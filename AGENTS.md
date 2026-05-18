@@ -33,6 +33,7 @@
 - [2026-05-18-tool-call-notification-degrade.md](docs/project_experience/2026-05-18-tool-call-notification-degrade.md) — 工具调用前端通知降级为 best-effort，避免微信提示消息失败反向打断 AG2 beta session
 - [2026-05-18-prompted-schema-fenced-json.md](docs/project_experience/2026-05-18-prompted-schema-fenced-json.md) — `PromptedSchema` 返回 markdown code fence 时，beta network 改为基于 `reply.body` 本地去围栏解析 `NetworkTurn`
 - [2026-05-18-beta-network-stream-token-bridge.md](docs/project_experience/2026-05-18-beta-network-stream-token-bridge.md) — beta network 订阅 `ModelMessageChunk` 并桥接到 frontend；IM gateway 降级为“正在生成回复”提示，CLI 去重最终全文
+- [2026-05-18-single-mode-beta-migration.md](docs/project_experience/2026-05-18-single-mode-beta-migration.md) — 单 Agent 模式迁移到 `autogen.beta.Agent`，并统一 beta 上下文裁剪与工具链
 
 ## docs/AG2_knowledge/（AG2 框架知识库）
 
@@ -51,5 +52,7 @@
 - [工具调用通知降级.md](docs/AG2_knowledge/工具调用通知降级.md) — beta `ToolCallEvent` 前端观察者应视为 best-effort，通知失败不应打断工具执行主链路
 - [PromptedSchema代码围栏兼容.md](docs/AG2_knowledge/PromptedSchema代码围栏兼容.md) — `PromptedSchema` 不保证输出一定是裸 JSON，beta network 需要基于 `reply.body` 做本地去围栏解析
 - [Beta流式消息桥接.md](docs/AG2_knowledge/Beta流式消息桥接.md) — `ModelMessageChunk` 需要由 runtime 主动桥接到 frontend，IM gateway 应降级为低频流式提示
+- [Beta单Agent模式.md](docs/AG2_knowledge/Beta单Agent模式.md) — 普通模式也可以使用 `autogen.beta.Agent`，避免继续维护 legacy single runtime
+- [Beta上下文裁剪兼容.md](docs/AG2_knowledge/Beta上下文裁剪兼容.md) — beta middleware 与 legacy `snip` 不是同一链路，tool-call / tool-result 裁剪需成对保留
 - [PromptedSchema与DeepSeek.md](docs/AG2_knowledge/PromptedSchema与DeepSeek.md) — 在 AG2 beta 中面向 DeepSeek 这类非原生 schema / thinking 模型的推荐落地方式
 - [会话与运行时分层.md](docs/AG2_knowledge/会话与运行时分层.md) — AgentSession 与 runtime 的职责边界、何时该放在 session 层，何时该下沉到 orchestration

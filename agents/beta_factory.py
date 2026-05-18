@@ -6,13 +6,13 @@ from urllib.parse import urlparse
 from autogen.beta import Agent, PromptedSchema
 from autogen.beta.config import OpenAIConfig
 from autogen.beta.config.config import ModelConfig
-from autogen.beta.middleware.builtin.history_limiter import HistoryLimiter
-from autogen.beta.middleware.builtin.token_limiter import TokenLimiter
 from autogen.beta.tools.final.function_tool import FunctionTool
 
 from agents.network_models import NetworkNextStep, NetworkTurn
+from agents.single_models import SingleTurn
 from agents.prompts.loader import load_prompt
 from config.config import ContextConfig, HarnessConfig, LlmAgentConfig, LlmConfig, SkillAssignmentConfig, load_skill_assignment_config
+from infrastructure.context.beta_limiters import build_beta_context_middleware
 from infrastructure.mcp.beta_tool_bridge import build_beta_tools_for_servers
 from infrastructure.mcp.manager import McpManager
 from infrastructure.llm.deepseek_beta_config import DeepSeekOpenAIConfig
@@ -162,12 +162,7 @@ def _build_role_tools(
 
 
 def _build_middleware(context_config: ContextConfig | None) -> list:
-    if not context_config or not context_config.enabled:
-        return []
-    middleware = [HistoryLimiter(context_config.max_messages)]
-    if context_config.max_tokens > 0:
-        middleware.append(TokenLimiter(context_config.max_tokens))
-    return middleware
+    return build_beta_context_middleware(context_config)
 
 
 def _create_role_agent(
@@ -272,4 +267,71 @@ def create_swarm_network_agents(
             harness_config=harness_config,
         ),
     }
+
+
+def _build_single_contract(*, native_response_schema: bool) -> str:
+    contract = (
+        "## Beta Single-Agent Contract\n"
+        "你当前运行在 AG2 beta 单 Agent 编排中。\n"
+        "忽略旧 prompt 里关于 `[Assistant]` 前缀、legacy group chat、UserProxy、"
+        "`TRANSFER TO USER`、`TERMINATE` 关键字路由的历史说明；这些旧机制现在不存在。\n"
+        "你的最终回复必须满足统一结构：\n"
+        "- `message`: 当前这一步真正要对用户说的话；如果你要提问，就把问题完整写在这里。\n"
+        "- `next_step`: 只能从以下值里选一个：ask_user, complete, terminate\n"
+        "不要在 `message` 里重复输出 JSON 说明，不要输出 `[Assistant]` 身份前缀。"
+    )
+    if native_response_schema:
+        return contract + "\n系统会按 schema 校验你的最终回复，不要输出该结构之外的额外文字。"
+    return (
+        contract
+        + "\n当前模型后端不支持原生 `response_format=json_schema`。"
+        "系统会通过 prompt schema 约束你的结构化输出。"
+        "你仍然必须只输出符合 schema 的 JSON，不要加 markdown code fence 或额外解释。"
+    )
+
+
+def _build_single_response_schema(native_response_schema: bool):
+    if native_response_schema:
+        return SingleTurn
+    return PromptedSchema(SingleTurn)
+
+
+def create_single_beta_agent(
+    llm_config: LlmConfig,
+    mcp_manager: McpManager | None,
+    skill_registry: SkillRegistry | None = None,
+    harness_config: HarnessConfig | None = None,
+) -> Agent[Any]:
+    agent_config = llm_config.generator
+    native_response_schema = _supports_native_response_schema(agent_config)
+
+    prompt_parts = [
+        load_prompt("single"),
+        _build_single_contract(native_response_schema=native_response_schema),
+    ]
+
+    skill_assignment = _get_skill_assignment()
+    if skill_registry:
+        summary_block = skill_registry.build_summary_block(
+            skill_assignment.skills.get("single", [])
+        )
+        if summary_block:
+            prompt_parts.append(summary_block)
+
+    if harness_config and harness_config.memory.enabled:
+        prompt_parts.append(build_memory_block(harness_config.memory))
+
+    return Agent(
+        name="Assistant",
+        prompt="\n\n".join(part.strip() for part in prompt_parts if part and part.strip()),
+        config=_to_beta_config(agent_config),
+        tools=_build_role_tools(
+            role_key="single",
+            mcp_manager=mcp_manager,
+            skill_registry=skill_registry,
+            harness_config=harness_config,
+        ),
+        middleware=_build_middleware(harness_config.context if harness_config else None),
+        response_schema=_build_single_response_schema(native_response_schema),
+    )
 

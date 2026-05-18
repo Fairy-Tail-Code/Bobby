@@ -2,7 +2,8 @@ from __future__ import annotations
 
 from autogen.beta import PromptedSchema
 
-from agents.beta_factory import create_swarm_network_agents
+from agents.beta_factory import create_single_beta_agent, create_swarm_network_agents
+from agents.single_models import SingleTurn
 from config.config import HarnessConfig, LlmAgentConfig, LlmConfig
 from infrastructure.llm.deepseek_beta_config import DeepSeekOpenAIConfig
 
@@ -51,3 +52,30 @@ def test_swarm_network_agents_keep_response_schema_for_openai_compatible_backend
     )
 
     assert agents["pm"]._response_schema is not None
+
+
+def test_single_beta_agent_uses_prompted_schema_for_deepseek() -> None:
+    agent = create_single_beta_agent(
+        _llm_config("https://api.deepseek.com"),
+        mcp_manager=None,
+        skill_registry=None,
+        harness_config=HarnessConfig(),
+    )
+
+    assert isinstance(agent.config, DeepSeekOpenAIConfig)
+    assert isinstance(agent._response_schema, PromptedSchema)
+    prompt_text = "\n".join(agent._system_prompt)
+    assert "不要输出 `[Assistant]`" in prompt_text
+
+
+def test_single_beta_agent_keeps_native_schema_for_openai_compatible_backends() -> None:
+    agent = create_single_beta_agent(
+        _llm_config("https://api.openai.com/v1"),
+        mcp_manager=None,
+        skill_registry=None,
+        harness_config=HarnessConfig(),
+    )
+
+    assert agent._response_schema is not None
+    assert not isinstance(agent._response_schema, PromptedSchema)
+    assert agent._response_schema.name == SingleTurn.__name__
