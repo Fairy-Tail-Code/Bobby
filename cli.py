@@ -1284,10 +1284,10 @@ def setup() -> None:
         "API key",
         existing_env.get("PM_API_KEY", ""),
         secret=True,
+        allow_empty=True,
     )
     if not api_key:
         typer.echo("  No API key provided. You can edit .env later.")
-        return
 
     same_all = _confirm_choice(
         "same_llm_config",
