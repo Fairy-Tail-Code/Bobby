@@ -21,6 +21,7 @@ class ChannelWeixinService(ChannelAdapter):
     async def send(self, recipient: str, subject: str, body: str, request_id: str) -> None:
         del recipient
         text = f"【{subject}】\n\n{body}"
+        logger.info("Sand Message")
         loop = asyncio.get_running_loop()
         self._pending_futures[request_id] = loop.create_future()
         await self._bot.send_text(self._chat_id, text)

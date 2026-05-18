@@ -27,6 +27,11 @@ class LlmAgentConfig:
                 "model": self.model,
                 "base_url": self.base_url,
                 "api_key": self.api_key,
+                "extra_body": {
+                    "thinking": {
+                        "type": "disabled"
+                    }
+                }
             }],
             "temperature": self.temperature,
         }
@@ -74,10 +79,10 @@ class ContextConfig:
     """Configuration for the context compression pipeline."""
     enabled: bool = True
     # Level 1 — Snip Compact
-    max_messages: int = 40
+    max_messages: int = 200
     keep_first_message: bool = True
     # Level 4 — Auto Compact
-    max_tokens: int = 60_000
+    max_tokens: int = 600000
     auto_compact_enabled: bool = True
 
 

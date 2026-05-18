@@ -14,3 +14,4 @@ knowledge_server.db
 .tmp*
 # Runtime logs
 *.log
+/todo/
