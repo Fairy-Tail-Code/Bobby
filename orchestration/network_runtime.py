@@ -5,6 +5,7 @@ import uuid
 from typing import Any
 
 from autogen.beta import Agent, AgentReply, MemoryStream
+from autogen.beta.context import Context
 from autogen.beta.events import ToolCallEvent
 from pydantic import ValidationError
 
@@ -33,7 +34,7 @@ class _RoleSession:
         self.agent = agent
         self.frontend = frontend
         self.chat_id = chat_id
-        self.stream = MemoryStream()
+        self.stream = _create_compat_memory_stream()
         self.reply: AgentReply[Any, Any] | None = None
         self._sub_ids: list = []
         self._register_observers()
@@ -48,8 +49,13 @@ class _RoleSession:
         sub_id = self.stream.where(ToolCallEvent).subscribe(self._on_tool_call)
         self._sub_ids.append(sub_id)
 
-    async def _on_tool_call(self, event: ToolCallEvent, context) -> None:
-        del context
+    async def _on_tool_call(
+        self,
+        event: ToolCallEvent,
+        __ctx__: Context | None = None,
+        **kwargs: Any,
+    ) -> None:
+        del __ctx__, kwargs
         await self.frontend.on_tool_call(
             self.chat_id,
             self.display_name,
@@ -70,6 +76,33 @@ class _RoleSession:
         for sub_id in self._sub_ids:
             self.stream.unsubscribe(sub_id)
         self._sub_ids.clear()
+
+
+def _create_compat_memory_stream() -> MemoryStream:
+    """Patch AG2 beta MemoryStream callbacks to accept __ctx__ injection.
+
+    The installed beta runtime passes context through ``__ctx__``. Some built-in
+    callbacks in this AG2 version, including ``MemoryStorage.save_event``, still
+    declare ``context`` and fail fast_depends validation once tool events are
+    emitted. We replace the default storage subscriber with a compatible wrapper.
+    """
+
+    stream = MemoryStream()
+    storage = stream.history.storage
+    stream._subscribers.clear()
+
+    async def save_event_compat(
+        event,
+        __ctx__: Context | None = None,
+        **kwargs: Any,
+    ) -> None:
+        del kwargs
+        if __ctx__ is None:
+            return
+        await storage.save_event(event, __ctx__)
+
+    stream.subscribe(save_event_compat)
+    return stream
 
 
 class NetworkSwarmRuntime:

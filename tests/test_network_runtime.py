@@ -3,10 +3,12 @@ from __future__ import annotations
 import asyncio
 
 from autogen.beta import Agent
+from autogen.beta.context import Context
+from autogen.beta.events import ToolCallEvent
 from autogen.beta.testing import TestConfig
 
 from agents.network_models import NetworkTurn
-from orchestration.network_runtime import NetworkSwarmRuntime
+from orchestration.network_runtime import NetworkSwarmRuntime, _RoleSession
 from orchestration.run_result import OrchestrationRunResult
 
 
@@ -200,3 +202,31 @@ def test_network_runtime_falls_back_to_plain_text_question_for_pm() -> None:
     assert channel.requests[0][2] == "你好！我是产品经理。你想做一个什么样的项目？"
     assert result.transcript[1]["content"] == "你好！我是产品经理。你想做一个什么样的项目？"
     assert result.transcript[2]["name"] == "pm_owner"
+
+
+def test_role_session_tool_call_stream_accepts_beta_ctx_injection() -> None:
+    frontend = _FrontendStub()
+    role_session = _RoleSession(
+        role_key="pm",
+        agent=_plain_agent("PM", '{"message":"unused","next_step":"terminate"}'),
+        frontend=frontend,
+        chat_id="chat-5",
+    )
+
+    async def run() -> None:
+        event = ToolCallEvent(
+            id="call-1",
+            name="load_memory",
+            arguments='{"memory_type":"project"}',
+            provider_data={},
+        )
+        await role_session.stream.send(event, Context(stream=role_session.stream))
+        history = list(await role_session.stream.history.get_events())
+        assert history[-1].name == "load_memory"
+
+    try:
+        asyncio.run(run())
+    finally:
+        role_session.close()
+
+    assert frontend.tool_calls == [("chat-5", "PM", "load_memory")]
