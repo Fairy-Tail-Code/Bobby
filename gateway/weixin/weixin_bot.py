@@ -38,6 +38,7 @@ class WeixinBotService:
         self._sync_buf = ""
         self._context_tokens: dict[str, str] = {}
         self._recent_message_ids: dict[str, float] = {}
+        self._active_stream_agents: set[tuple[str, str]] = set()
 
     def set_main_loop(self, loop: asyncio.AbstractEventLoop) -> None:
         self._main_loop = loop
@@ -70,6 +71,7 @@ class WeixinBotService:
         logger.info("WeixinBotService stopping")
 
     async def send_text(self, chat_id: str, text: str) -> None:
+        self._clear_stream_state(chat_id)
         await self._run_on_main_loop(self._send_text_in_main_loop(chat_id, text))
 
     async def _run_on_main_loop(self, coroutine: Coroutine[Any, Any, None]) -> None:
@@ -129,10 +131,27 @@ class WeixinBotService:
                 )
 
     async def stream_token(self, chat_id: str, agent_name: str, token: str) -> None:
-        del chat_id, agent_name, token
+        if not token.strip():
+            return
+        stream_key = (chat_id, agent_name)
+        if stream_key in self._active_stream_agents:
+            return
+        self._active_stream_agents.add(stream_key)
+        try:
+            await self._run_on_main_loop(
+                self._send_text_in_main_loop(chat_id, f"✍️ 【{agent_name}】正在生成回复...")
+            )
+        except Exception:
+            self._active_stream_agents.discard(stream_key)
+            raise
 
     async def on_tool_call(self, chat_id: str, agent_name: str, tool_name: str) -> None:
         await self.send_text(chat_id, f"🔧 【{agent_name}】正在执行工具：{tool_name}")
+
+    def _clear_stream_state(self, chat_id: str) -> None:
+        stale_keys = [key for key in self._active_stream_agents if key[0] == chat_id]
+        for key in stale_keys:
+            self._active_stream_agents.discard(key)
 
     async def _poll_loop(self) -> None:
         from gateway.weixin.weixin_onboard import (

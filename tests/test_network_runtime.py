@@ -4,7 +4,7 @@ import asyncio
 
 from autogen.beta import Agent, PromptedSchema
 from autogen.beta.context import Context
-from autogen.beta.events import ToolCallEvent
+from autogen.beta.events import ModelMessageChunk, ToolCallEvent
 from autogen.beta.testing import TestConfig
 
 from agents.network_models import NetworkNextStep, NetworkTurn
@@ -16,12 +16,13 @@ class _FrontendStub:
     def __init__(self) -> None:
         self.messages: list[tuple[str, str]] = []
         self.tool_calls: list[tuple[str, str, str]] = []
+        self.stream_tokens: list[tuple[str, str, str]] = []
 
     async def send_text(self, chat_id: str, text: str) -> None:
         self.messages.append((chat_id, text))
 
     async def stream_token(self, chat_id: str, agent_name: str, token: str) -> None:
-        return None
+        self.stream_tokens.append((chat_id, agent_name, token))
 
     async def on_tool_call(self, chat_id: str, agent_name: str, tool_name: str) -> None:
         self.tool_calls.append((chat_id, agent_name, tool_name))
@@ -245,6 +246,27 @@ def test_role_session_tool_call_stream_accepts_beta_ctx_injection() -> None:
         role_session.close()
 
     assert frontend.tool_calls == [("chat-5", "PM", "load_memory")]
+
+
+def test_role_session_model_chunk_stream_accepts_beta_ctx_injection() -> None:
+    frontend = _FrontendStub()
+    role_session = _RoleSession(
+        role_key="pm",
+        agent=_plain_agent("PM", '{"message":"unused","next_step":"terminate"}'),
+        frontend=frontend,
+        chat_id="chat-stream",
+    )
+
+    async def run() -> None:
+        event = ModelMessageChunk(content="你好")
+        await role_session.stream.send(event, Context(stream=role_session.stream))
+
+    try:
+        asyncio.run(run())
+    finally:
+        role_session.close()
+
+    assert frontend.stream_tokens == [("chat-stream", "PM", "你好")]
 
 
 def test_role_session_tool_call_notification_failure_does_not_abort_stream() -> None:

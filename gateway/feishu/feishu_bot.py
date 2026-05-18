@@ -43,6 +43,7 @@ class FeishuBotService:
         self._ws_thread: threading.Thread | None = None
         self._ws_loop: asyncio.AbstractEventLoop | None = None
         self._started = False
+        self._active_stream_agents: set[tuple[str, str]] = set()
 
     @classmethod
     def from_env(cls, on_message: Callable[[str, str, str], Awaitable[None]]) -> "FeishuBotService | None":
@@ -196,16 +197,32 @@ class FeishuBotService:
 
     async def send_text(self, chat_id: str, text: str) -> None:
         """Send a text message to a chat (group or P2P)."""
+        self._clear_stream_state(chat_id)
         content = json.dumps({"text": text})
         await self._send_message(chat_id, "text", content)
 
     async def stream_token(self, chat_id: str, agent_name: str, token: str) -> None:
-        """Feishu doesn't support streaming — no-op."""
-        pass
+        """Feishu receives a single per-turn typing indicator for streaming replies."""
+        if not token.strip():
+            return
+        stream_key = (chat_id, agent_name)
+        if stream_key in self._active_stream_agents:
+            return
+        self._active_stream_agents.add(stream_key)
+        try:
+            await self.send_text(chat_id, f"✍️ {agent_name} 正在生成回复...")
+        except Exception:
+            self._active_stream_agents.discard(stream_key)
+            raise
 
     async def on_tool_call(self, chat_id: str, agent_name: str, tool_name: str) -> None:
         """Notify tool call via text message."""
         await self.send_text(chat_id, f"🔧 **{agent_name}** 正在执行工具: `{tool_name}`")
+
+    def _clear_stream_state(self, chat_id: str) -> None:
+        stale_keys = [key for key in self._active_stream_agents if key[0] == chat_id]
+        for key in stale_keys:
+            self._active_stream_agents.discard(key)
 
     async def send_rich_text(self, chat_id: str, title: str, content_lines: list[str]) -> None:
         """Send a rich text (post) message with title and content."""

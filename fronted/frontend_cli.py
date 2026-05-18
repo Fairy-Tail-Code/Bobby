@@ -46,13 +46,22 @@ def _agent_color(name: str) -> str:
 class CLIFrontend:
     """Terminal frontend that prints agent output with colored formatting."""
 
+    def __init__(self) -> None:
+        self._stream_buffers: dict[tuple[str, str], str] = {}
+
     async def send_text(self, chat_id: str, text: str) -> None:
+        if self._consume_streamed_message(chat_id, text):
+            sys.stdout.write("\n")
+            sys.stdout.flush()
+            return
         color = _COLORS["white"]
         reset = _COLORS["reset"]
         sys.stdout.write(f"\r{color}{text}{reset}\n")
         sys.stdout.flush()
 
     async def stream_token(self, chat_id: str, agent_name: str, token: str) -> None:
+        key = (chat_id, agent_name)
+        self._stream_buffers[key] = self._stream_buffers.get(key, "") + token
         color = _COLORS[_agent_color(agent_name)]
         reset = _COLORS["reset"]
         sys.stdout.write(f"{color}{token}{reset}")
@@ -63,6 +72,22 @@ class CLIFrontend:
         reset = _COLORS["reset"]
         sys.stdout.write(f"\r{color}\U0001f527 {agent_name} -> {tool_name}{reset}\n")
         sys.stdout.flush()
+
+    def _consume_streamed_message(self, chat_id: str, text: str) -> bool:
+        if not text.startswith("【") or "】\n" not in text:
+            self._clear_stream_state(chat_id)
+            return False
+
+        agent_name, body = text[1:].split("】\n", 1)
+        key = (chat_id, agent_name)
+        streamed = self._stream_buffers.get(key)
+        self._clear_stream_state(chat_id)
+        return streamed is not None and body == streamed
+
+    def _clear_stream_state(self, chat_id: str) -> None:
+        stale_keys = [key for key in self._stream_buffers if key[0] == chat_id]
+        for key in stale_keys:
+            self._stream_buffers.pop(key, None)
 
 
 def print_agent_header(agent_name: str) -> None:

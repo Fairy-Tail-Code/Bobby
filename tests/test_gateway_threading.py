@@ -74,6 +74,41 @@ def test_weixin_send_text_switches_back_to_main_loop(monkeypatch) -> None:
         _stop_background_loop(loop, thread)
 
 
+def test_weixin_stream_token_switches_back_to_main_loop_once(monkeypatch) -> None:
+    async def _noop_on_message(chat_id: str, open_id: str, chat_type: str, text: str) -> None:
+        del chat_id, open_id, chat_type, text
+
+    loop, thread = _start_background_loop()
+    try:
+        bot = WeixinBotService(account_id="bot", token="token", on_message=_noop_on_message)
+        bot.set_main_loop(loop)
+        bot._session = object()  # type: ignore[assignment]
+        seen: list[dict[str, object]] = []
+
+        async def fake_send(chat_id: str, text: str) -> None:
+            seen.append(
+                {
+                    "chat_id": chat_id,
+                    "text": text,
+                    "loop": asyncio.get_running_loop(),
+                    "thread_id": threading.get_ident(),
+                }
+            )
+
+        monkeypatch.setattr(bot, "_send_text_in_main_loop", fake_send)
+
+        asyncio.run(bot.stream_token("chat-1", "PM", "你"))
+        asyncio.run(bot.stream_token("chat-1", "PM", "好"))
+
+        assert len(seen) == 1
+        assert seen[0]["chat_id"] == "chat-1"
+        assert seen[0]["text"] == "✍️ 【PM】正在生成回复..."
+        assert seen[0]["loop"] is loop
+        assert seen[0]["thread_id"] == thread.ident
+    finally:
+        _stop_background_loop(loop, thread)
+
+
 def test_weixin_channel_inject_reply_is_thread_safe() -> None:
     loop, thread = _start_background_loop()
     try:

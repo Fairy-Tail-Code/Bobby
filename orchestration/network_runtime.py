@@ -7,7 +7,7 @@ from typing import Any
 
 from autogen.beta import Agent, AgentReply, MemoryStream
 from autogen.beta.context import Context
-from autogen.beta.events import ToolCallEvent
+from autogen.beta.events import ModelMessageChunk, ToolCallEvent
 from pydantic import ValidationError
 
 from agents.network_models import (
@@ -49,8 +49,31 @@ class _RoleSession:
     def _register_observers(self) -> None:
         if not self.frontend:
             return
+        sub_id = self.stream.where(ModelMessageChunk).subscribe(self._on_model_chunk)
+        self._sub_ids.append(sub_id)
         sub_id = self.stream.where(ToolCallEvent).subscribe(self._on_tool_call)
         self._sub_ids.append(sub_id)
+
+    async def _on_model_chunk(
+        self,
+        event: ModelMessageChunk,
+        __ctx__: Context | None = None,
+        **kwargs: Any,
+    ) -> None:
+        del __ctx__, kwargs
+        try:
+            await self.frontend.stream_token(
+                self.chat_id,
+                self.display_name,
+                event.content,
+            )
+        except Exception:
+            logger.warning(
+                "Frontend stream-token notification failed: chat_id=%s role=%s",
+                self.chat_id,
+                self.display_name,
+                exc_info=True,
+            )
 
     async def _on_tool_call(
         self,
