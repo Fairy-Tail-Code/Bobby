@@ -26,6 +26,7 @@
 - [2026-05-09-deepseek-response-format-fallback.md](docs/project_experience/2026-05-09-deepseek-response-format-fallback.md) — DeepSeek 不支持 `response_format=json_schema` 时，专家模式降级为 prompt JSON contract + runtime 本地解析
 - [2026-05-09-session-runtime-layering-refactor.md](docs/project_experience/2026-05-09-session-runtime-layering-refactor.md) — 将原 SwarmSession 拆为 AgentSession 壳层 + orchestration runtimes，清理 single/swarm 双路径混居
 - [2026-05-10-reapply-deepseek-response-format-fix.md](docs/project_experience/2026-05-10-reapply-deepseek-response-format-fix.md) — 在 session/runtime 重构后，将被覆盖的 DeepSeek `response_format` 兼容修复重新补回主线
+- [2026-05-18-beta-tool-ctx-validation.md](docs/project_experience/2026-05-18-beta-tool-ctx-validation.md) — AG2 beta MCP 工具桥动态签名修复：兼容 `__ctx__` 注入、零参数工具与可选参数省略
 
 ## docs/AG2_knowledge/（AG2 框架知识库）
 
@@ -38,4 +39,5 @@
 - [Gateway服务化.md](docs/AG2_knowledge/Gateway服务化.md) — Gateway 主 loop 与 AG2 工作线程的异步边界、跨 loop 桥接原则
 - [记忆系统.md](docs/AG2_knowledge/记忆系统.md) — cc-haha 记忆系统拆解、AG2 中的 prompt 注入与 Tool 化落地方式
 - [Network模式.md](docs/AG2_knowledge/Network模式.md) — beta network 的概念映射、runtime 路由、MemoryStream、beta tool 与 HITL 落地方式
+- [Beta工具参数校验.md](docs/AG2_knowledge/Beta工具参数校验.md) — AG2 beta `FunctionTool` 的 `__ctx__` 注入、签名推断与 MCP 动态工具桥落地原则
 - [会话与运行时分层.md](docs/AG2_knowledge/会话与运行时分层.md) — AgentSession 与 runtime 的职责边界、何时该放在 session 层，何时该下沉到 orchestration
