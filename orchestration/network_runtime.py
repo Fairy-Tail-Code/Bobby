@@ -64,7 +64,7 @@ class _RoleSession:
         parsed = await self.reply.content(retries=1)
         if parsed is None:
             raise RuntimeError(f"{self.display_name} returned an empty beta-network response")
-        return _coerce_network_turn(parsed)
+        return _coerce_network_turn(parsed, role_key=self.role_key)
 
     def close(self) -> None:
         for sub_id in self._sub_ids:
@@ -234,7 +234,7 @@ class NetworkSwarmRuntime:
         else:
             current_role = last_role_key or "pm"
 
-        transcript_text = _format_transcript(transcript, limit=16)
+        transcript_text = _format_transcript(transcript, limit=0)
         message = (
             "Continue the shared multi-agent task from this saved transcript.\n\n"
             f"Original prompt:\n{prompt}\n\n"
@@ -253,7 +253,7 @@ class NetworkSwarmRuntime:
     ) -> str:
         sender_name = ROLE_DISPLAY_NAMES[sender_role]
         recipient_name = ROLE_DISPLAY_NAMES[recipient_role]
-        transcript_text = _format_transcript(transcript, limit=12)
+        transcript_text = _format_transcript(transcript, limit=0)
         return (
             f"You are now acting as {recipient_name}.\n\n"
             f"Latest handoff from {sender_name}:\n{message}\n\n"
@@ -267,7 +267,7 @@ class NetworkSwarmRuntime:
         reply: str,
         transcript: list[dict[str, Any]],
     ) -> str:
-        transcript_text = _format_transcript(transcript, limit=12)
+        transcript_text = _format_transcript(transcript, limit=0)
         return (
             f"Human operator reply from {owner_role}:\n{reply}\n\n"
             f"Recent shared transcript:\n{transcript_text}\n\n"
@@ -299,7 +299,7 @@ def _format_transcript(
     return "\n".join(lines) if lines else "(empty transcript)"
 
 
-def _coerce_network_turn(payload: Any) -> NetworkTurn:
+def _coerce_network_turn(payload: Any, role_key: str | None = None) -> NetworkTurn:
     if isinstance(payload, NetworkTurn):
         return payload
 
@@ -311,6 +311,9 @@ def _coerce_network_turn(payload: Any) -> NetworkTurn:
         try:
             return NetworkTurn.model_validate_json(candidate)
         except ValidationError as exc:
+            inferred = _infer_network_turn_from_plain_text(payload, role_key=role_key)
+            if inferred is not None:
+                return inferred
             snippet = payload.strip().replace("\r", " ").replace("\n", " ")
             raise ValueError(
                 f"Beta-network agent returned invalid NetworkTurn JSON: {snippet[:200]}"
@@ -337,3 +340,104 @@ def _extract_json_object(text: str) -> str:
 
     match = re.search(r"\{.*\}", stripped, flags=re.DOTALL)
     return match.group(0).strip() if match else stripped
+
+
+def _infer_network_turn_from_plain_text(
+    text: str,
+    *,
+    role_key: str | None,
+) -> NetworkTurn | None:
+    message = _strip_role_prefix(_extract_json_object(text))
+    if not message:
+        return None
+
+    next_step = _infer_next_step_from_plain_text(message, role_key=role_key)
+    if next_step is None:
+        return None
+
+    return NetworkTurn(message=message, next_step=next_step)
+
+
+def _strip_role_prefix(text: str) -> str:
+    stripped = text.strip()
+    return re.sub(r"^\s*\[[^\]]+\]\s*", "", stripped).strip()
+
+
+def _infer_next_step_from_plain_text(
+    text: str,
+    *,
+    role_key: str | None,
+) -> NetworkNextStep | None:
+    normalized = text.lower()
+
+    if _looks_like_user_question(text):
+        return NetworkNextStep.ASK_USER
+
+    if any(marker in text for marker in ("终止", "停止", "无法继续", "中止")):
+        return NetworkNextStep.TERMINATE
+
+    if role_key == "pm":
+        if _mentions_handoff_target(normalized, "planner"):
+            return NetworkNextStep.HANDOFF_PLANNER
+        return NetworkNextStep.ASK_USER
+
+    if role_key == "planner":
+        if _mentions_handoff_target(normalized, "generator"):
+            return NetworkNextStep.HANDOFF_GENERATOR
+        if _mentions_handoff_target(normalized, "evaluator"):
+            return NetworkNextStep.HANDOFF_EVALUATOR
+        return None
+
+    if role_key == "generator":
+        if _mentions_handoff_target(normalized, "planner"):
+            return NetworkNextStep.HANDOFF_PLANNER
+        if _mentions_handoff_target(normalized, "evaluator"):
+            return NetworkNextStep.HANDOFF_EVALUATOR
+        return None
+
+    if role_key == "evaluator":
+        if any(marker in text for marker in ("通过", "已达标", "验收通过", "完成验收", "审核通过")):
+            return NetworkNextStep.COMPLETE
+        if _mentions_handoff_target(normalized, "planner"):
+            return NetworkNextStep.HANDOFF_PLANNER
+        if _mentions_handoff_target(normalized, "generator"):
+            return NetworkNextStep.HANDOFF_GENERATOR
+        return None
+
+    return None
+
+
+def _looks_like_user_question(text: str) -> bool:
+    if "?" in text or "？" in text:
+        return True
+
+    question_markers = (
+        "请提供",
+        "请告诉",
+        "请确认",
+        "请补充",
+        "请说明",
+        "是否",
+        "有没有",
+        "什么",
+        "哪些",
+        "哪个",
+        "哪种",
+        "多少",
+        "能否",
+        "可以",
+    )
+    return any(marker in text for marker in question_markers)
+
+
+def _mentions_handoff_target(normalized_text: str, target: str) -> bool:
+    target_variants = {
+        "planner": ("planner", "规划", "技术方案", "prd", "计划"),
+        "generator": ("generator", "开发", "实现", "编码"),
+        "evaluator": ("evaluator", "评估", "验收", "测试", "审核"),
+    }
+    common_handoff_markers = ("交给", "交接", "handoff", "转给", "下一步", "进入")
+    variants = target_variants[target]
+    return any(marker in normalized_text for marker in common_handoff_markers) and any(
+        variant in normalized_text for variant in variants
+    )

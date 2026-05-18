@@ -167,3 +167,36 @@ def test_network_runtime_parses_plain_json_for_schema_incompatible_backend() -> 
     assert result.last_speaker == "PM"
     assert result.transcript[-1]["content"] == "已确认需求，先结束本轮。"
     assert runtime.get_transcript() == result.transcript
+
+
+def test_network_runtime_falls_back_to_plain_text_question_for_pm() -> None:
+    frontend = _FrontendStub()
+    channel = _ChannelStub(["做一个任务管理工具"])
+    runtime = NetworkSwarmRuntime(
+        agents={
+            "pm": _plain_agent(
+                "PM",
+                "[PM] 你好！我是产品经理。你想做一个什么样的项目？",
+                '{"message":"PRD 已确认完成，交给 Planner。","next_step":"handoff_planner"}',
+            ),
+            "planner": _agent(
+                "Planner",
+                '{"message":"技术方案已确认。","next_step":"terminate"}',
+            ),
+            "generator": _agent("Generator", '{"message":"unused","next_step":"handoff_evaluator"}'),
+            "evaluator": _agent("Evaluator", '{"message":"unused","next_step":"complete"}'),
+        },
+        frontend=frontend,
+        channel=channel,
+        chat_id="chat-4",
+        max_rounds=4,
+        hitl_timeout=30,
+    )
+
+    result = asyncio.run(runtime.run(prompt="你好"))
+
+    assert result.status == "terminated"
+    assert channel.requests[0][0] == "pm_owner"
+    assert channel.requests[0][2] == "你好！我是产品经理。你想做一个什么样的项目？"
+    assert result.transcript[1]["content"] == "你好！我是产品经理。你想做一个什么样的项目？"
+    assert result.transcript[2]["name"] == "pm_owner"

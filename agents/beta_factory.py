@@ -72,6 +72,8 @@ def _build_network_contract(
         contract
         + "\n当前模型后端不支持 `response_format=json_schema` 强约束。"
         "你必须直接输出单个原始 JSON object，且只输出这个 JSON；不要加 Markdown 代码块，不要加解释。"
+        "不要输出 `[PM]`、`[Planner]` 这类身份前缀，不要先寒暄再补 JSON。"
+        '正确示例：{"message":"请提供仓库地址。","next_step":"ask_user"}'
     )
 
 

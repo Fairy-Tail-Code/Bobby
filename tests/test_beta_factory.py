@@ -28,6 +28,9 @@ def test_swarm_network_agents_disable_response_schema_for_deepseek() -> None:
     )
 
     assert agents["pm"]._response_schema is None
+    prompt_text = "\n".join(agents["pm"]._system_prompt)
+    assert "正确示例" in prompt_text
+    assert "不要输出 `[PM]`" in prompt_text
 
 
 def test_swarm_network_agents_keep_response_schema_for_openai_compatible_backends() -> None:
