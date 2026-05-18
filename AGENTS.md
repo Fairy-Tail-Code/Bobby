@@ -31,6 +31,7 @@
 - [2026-05-18-beta-stream-ctx-callback.md](docs/project_experience/2026-05-18-beta-stream-ctx-callback.md) — AG2 beta `MemoryStream` / tool-call observer 的 `__ctx__` 兼容封装，修复第二轮工具调用时的 stream 回调校验失败
 - [2026-05-18-deepseek-beta-prompted-schema.md](docs/project_experience/2026-05-18-deepseek-beta-prompted-schema.md) — 保留 AG2 前提下，将 DeepSeek beta 路径切回 `PromptedSchema + thinking disabled`，避免 `reasoning_content` 回放阻塞
 - [2026-05-18-tool-call-notification-degrade.md](docs/project_experience/2026-05-18-tool-call-notification-degrade.md) — 工具调用前端通知降级为 best-effort，避免微信提示消息失败反向打断 AG2 beta session
+- [2026-05-18-prompted-schema-fenced-json.md](docs/project_experience/2026-05-18-prompted-schema-fenced-json.md) — `PromptedSchema` 返回 markdown code fence 时，beta network 改为基于 `reply.body` 本地去围栏解析 `NetworkTurn`
 
 ## docs/AG2_knowledge/（AG2 框架知识库）
 
@@ -47,5 +48,6 @@
 - [Beta纯文本降级.md](docs/AG2_knowledge/Beta纯文本降级.md) — 非 schema 后端下 beta network 的 prompt JSON contract 与 runtime 纯文本兜底策略
 - [Beta事件流上下文兼容.md](docs/AG2_knowledge/Beta事件流上下文兼容.md) — beta stream subscriber / MemoryStream history callback 与 `__ctx__` 注入的兼容处理
 - [工具调用通知降级.md](docs/AG2_knowledge/工具调用通知降级.md) — beta `ToolCallEvent` 前端观察者应视为 best-effort，通知失败不应打断工具执行主链路
+- [PromptedSchema代码围栏兼容.md](docs/AG2_knowledge/PromptedSchema代码围栏兼容.md) — `PromptedSchema` 不保证输出一定是裸 JSON，beta network 需要基于 `reply.body` 做本地去围栏解析
 - [PromptedSchema与DeepSeek.md](docs/AG2_knowledge/PromptedSchema与DeepSeek.md) — 在 AG2 beta 中面向 DeepSeek 这类非原生 schema / thinking 模型的推荐落地方式
 - [会话与运行时分层.md](docs/AG2_knowledge/会话与运行时分层.md) — AgentSession 与 runtime 的职责边界、何时该放在 session 层，何时该下沉到 orchestration

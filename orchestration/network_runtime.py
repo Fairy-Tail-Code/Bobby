@@ -79,10 +79,37 @@ class _RoleSession:
             self.reply = await self.agent.ask(message, stream=self.stream)
         else:
             self.reply = await self.reply.ask(message)
-        parsed = await self.reply.content(retries=1)
-        if parsed is None:
-            raise RuntimeError(f"{self.display_name} returned an empty beta-network response")
-        return _coerce_network_turn(parsed, role_key=self.role_key)
+        return await self._parse_network_turn_reply(self.reply)
+
+    async def _parse_network_turn_reply(
+        self,
+        reply: AgentReply[Any, Any],
+    ) -> NetworkTurn:
+        current = reply
+        last_error: Exception | None = None
+
+        for attempt in range(2):
+            body = current.body
+            if body is None:
+                raise RuntimeError(f"{self.display_name} returned an empty beta-network response")
+
+            try:
+                if current is not self.reply:
+                    self.reply = current
+                return _coerce_network_turn(body, role_key=self.role_key)
+            except (TypeError, ValueError) as exc:
+                last_error = exc
+                if attempt >= 1:
+                    break
+                current = await current.ask(
+                    "Your previous response could not be parsed as a valid NetworkTurn JSON object.\n"
+                    "Return exactly one JSON object with keys `message` and `next_step`.\n"
+                    "Do not wrap the JSON in markdown code fences.\n"
+                    "Do not add any explanation outside the JSON object."
+                )
+
+        assert last_error is not None
+        raise last_error
 
     def close(self) -> None:
         for sub_id in self._sub_ids:

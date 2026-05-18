@@ -2,12 +2,12 @@ from __future__ import annotations
 
 import asyncio
 
-from autogen.beta import Agent
+from autogen.beta import Agent, PromptedSchema
 from autogen.beta.context import Context
 from autogen.beta.events import ToolCallEvent
 from autogen.beta.testing import TestConfig
 
-from agents.network_models import NetworkTurn
+from agents.network_models import NetworkNextStep, NetworkTurn
 from orchestration.network_runtime import NetworkSwarmRuntime, _RoleSession
 from orchestration.run_result import OrchestrationRunResult
 
@@ -72,6 +72,15 @@ def _plain_agent(name: str, *responses: str) -> Agent[str]:
         name=name,
         prompt=f"You are {name}.",
         config=TestConfig(*responses),
+    )
+
+
+def _prompted_agent(name: str, *responses: str) -> Agent[NetworkTurn]:
+    return Agent(
+        name=name,
+        prompt=f"You are {name}.",
+        config=TestConfig(*responses),
+        response_schema=PromptedSchema(NetworkTurn),
     )
 
 
@@ -262,3 +271,23 @@ def test_role_session_tool_call_notification_failure_does_not_abort_stream() -> 
         asyncio.run(run())
     finally:
         role_session.close()
+
+
+def test_role_session_ask_accepts_prompted_schema_markdown_fences() -> None:
+    role_session = _RoleSession(
+        role_key="pm",
+        agent=_prompted_agent(
+            "PM",
+            '```json\n{"message":"请先提供仓库地址。","next_step":"ask_user"}\n```',
+        ),
+        frontend=_FrontendStub(),
+        chat_id="chat-7",
+    )
+
+    try:
+        turn = asyncio.run(role_session.ask("你好"))
+    finally:
+        role_session.close()
+
+    assert turn.message == "请先提供仓库地址。"
+    assert turn.next_step == NetworkNextStep.ASK_USER
